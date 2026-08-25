@@ -45,3 +45,10 @@ next-env.d.ts
 
 # Temporary probe written by scripts/verify-boundaries.mjs; cleaned up on exit.
 __boundary-probe.*
+
+# BMad tooling: skill definitions and the rendered workflow engine.
+# Reinstallable, and noisy in diffs. The design record in _bmad-output/
+# (architecture, epics, specs, sprint status) stays tracked deliberately.
+/.claude/
+/_bmad/
+/BMAD-PLAN.md
