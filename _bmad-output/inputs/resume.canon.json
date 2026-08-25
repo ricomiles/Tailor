@@ -1,0 +1,212 @@
+{
+  "$comment": "CANON. Everything true about Rico. The tailoring step SELECTS from this and may lightly rephrase; it may never invent. Every emitted bullet must cite a canon `id`. Add freely — this file is meant to be larger than any rendered resume.",
+
+  "schemaVersion": "1.0",
+
+  "basics": {
+    "name": "Rico Miles Quiblat",
+    "label": "Full Stack Engineer",
+    "email": "ricoquiblat@gmail.com",
+    "phone": "TODO",
+    "location": {
+      "city": "Cebu City",
+      "region": "Central Visayas",
+      "country": "Philippines",
+      "remoteNote": "Open to remote; currently works remotely for a Canadian employer"
+    },
+    "profiles": [
+      { "network": "GitHub", "username": "ricomiles", "url": "https://github.com/ricomiles", "include": "always" },
+      { "network": "LinkedIn", "username": "TODO", "url": "TODO", "include": "never" }
+    ],
+    "summaries": [
+      {
+        "id": "sum-generalist",
+        "tags": ["fullstack", "generalist"],
+        "text": "Full stack engineer with ~3 years of professional experience across smart contracts, backend, frontend, and deployment. Previously led an engineering org of 8-10; now shipping production protocol work end to end."
+      },
+      {
+        "id": "sum-web3",
+        "tags": ["web3", "blockchain", "defi", "solidity", "cardano"],
+        "text": "Full stack blockchain engineer with production experience across EVM and Cardano. Has shipped and deployed audited DeFi smart contracts, remediated audit and bug bounty findings, and owned the surrounding backend and frontend."
+      },
+      {
+        "id": "sum-leadership",
+        "tags": ["leadership", "eng-management", "staff", "lead"],
+        "text": "Engineer and former Head of Engineering who has owned solution architecture end to end — leading a cross-functional team of 8-10 engineers plus design and admin, reporting directly to the CEO, while remaining hands-on across the stack."
+      }
+    ]
+  },
+
+  "work": [
+    {
+      "id": "job-ardata",
+      "company": "ARData Intelligence Solutions Inc.",
+      "position": "Full Stack Engineer",
+      "location": "Remote (Canada)",
+      "startDate": "2026-03",
+      "endDate": null,
+      "context": "Core maintainer of Goldfish (GGBR) and StakeMyGold — two separate EVM protocols, not one ecosystem. Repos are internal, not open source.",
+      "bullets": [
+        {
+          "id": "ard-1",
+          "text": "Integrated new smart contracts across backend and frontend and handled their on-chain deployment for two production DeFi protocols.",
+          "tags": ["solidity", "evm", "fullstack", "deployment", "defi"],
+          "weight": 5
+        },
+        {
+          "id": "ard-2",
+          "text": "Shipped smart contract updates remediating findings from a third-party security audit.",
+          "tags": ["solidity", "security", "audit", "smart-contracts"],
+          "weight": 5
+        },
+        {
+          "id": "ard-3",
+          "text": "Triaged and resolved bug bounty submissions spanning backend and frontend repositories.",
+          "tags": ["security", "backend", "frontend", "bug-bounty"],
+          "weight": 4
+        },
+        {
+          "id": "ard-4",
+          "text": "Delivered a full reskin of the product website, integrating the new design across the frontend without protocol downtime.",
+          "tags": ["frontend", "react", "nextjs", "ui"],
+          "weight": 3
+        },
+        {
+          "id": "ard-5",
+          "text": "Core maintainer across the full stack — Solidity contracts, Go services, TypeScript frontend, and deployment pipelines.",
+          "tags": ["go", "typescript", "solidity", "fullstack", "generalist"],
+          "weight": 4
+        }
+      ]
+    },
+    {
+      "id": "job-saib-head",
+      "company": "SAIB Inc.",
+      "position": "Head of Engineering",
+      "location": "Remote",
+      "startDate": "2025-08",
+      "endDate": "2026-02",
+      "context": "Web3 startup building Cardano blockchain infrastructure and smart contracts.",
+      "bullets": [
+        {
+          "id": "saib-lead-1",
+          "text": "Led a team of 8-10 engineers plus 3 designers and 2 admin staff, reporting directly to the CEO.",
+          "tags": ["leadership", "eng-management", "team"],
+          "weight": 5
+        },
+        {
+          "id": "saib-lead-2",
+          "text": "Led development of Levvy.fi, a decentralized lending platform on Cardano, owning smart contracts, backend, and frontend.",
+          "tags": ["defi", "cardano", "smart-contracts", "fullstack", "leadership"],
+          "weight": 5
+        },
+        {
+          "id": "saib-lead-3",
+          "text": "Took over Levvy from its original team, delivering V3 while actively maintaining V2 in production.",
+          "tags": ["migration", "ownership", "defi", "legacy"],
+          "weight": 4,
+          "note": "Originally built by The Ape Society; handed to SAIB. Phrase neutrally — don't recount the drama."
+        },
+        {
+          "id": "saib-lead-4",
+          "text": "Shipped Levvy's smart contracts through a third-party security audit by Anastasia Labs.",
+          "tags": ["security", "audit", "smart-contracts", "cardano"],
+          "weight": 4
+        },
+        {
+          "id": "saib-lead-5",
+          "text": "Levvy reached approximately $1.27M in protocol revenue.",
+          "tags": ["impact", "metrics", "defi"],
+          "weight": 5,
+          "note": "Figure is $1.27M in cumulative fees, confirmed 2026-08-13. You prefer revenue over TVL as the headline metric. TVL reference point: believed to have hit ~$5M at some point — treat as unverified, don't use unless you can stand behind it."
+        },
+        {
+          "id": "saib-lead-6",
+          "text": "Interfaced directly with clients and external stakeholders on scope, delivery, and technical direction.",
+          "tags": ["stakeholders", "client-facing", "communication", "leadership"],
+          "weight": 3
+        }
+      ]
+    },
+    {
+      "id": "job-saib-swe",
+      "company": "SAIB Inc.",
+      "position": "Software Engineer",
+      "location": "Remote",
+      "startDate": "2024-09",
+      "endDate": "2025-08",
+      "bullets": [
+        {
+          "id": "saib-swe-1",
+          "text": "Contributed to open source Cardano infrastructure at the protocol level — utxorpc, dolos, and pallas (TxPipe), including node tooling.",
+          "tags": ["open-source", "cardano", "protocol", "rust", "infrastructure"],
+          "weight": 5
+        },
+        {
+          "id": "saib-swe-2",
+          "text": "Built internal .NET tooling including a transaction-building library.",
+          "tags": ["csharp", "dotnet", "tooling", "backend"],
+          "weight": 4,
+          "note": "Lead with this for any C#/.NET role."
+        },
+        {
+          "id": "saib-swe-3",
+          "text": "Applied withdraw-zero and input-indexing patterns to reduce on-chain execution costs in Cardano validators.",
+          "tags": ["cardano", "optimization", "smart-contracts", "aiken", "performance"],
+          "weight": 4
+        },
+        {
+          "id": "saib-swe-4",
+          "text": "Authored approved Project Catalyst funding proposals, including Chrysalis.Plutus.",
+          "tags": ["writing", "open-source", "cardano", "proposals", "communication"],
+          "weight": 3
+        }
+      ]
+    }
+  ],
+
+  "education": [
+    {
+      "id": "edu-cit",
+      "institution": "Cebu Institute of Technology – University",
+      "studyType": "BS",
+      "area": "Computer Science",
+      "startDate": "2022",
+      "endDate": "2026",
+      "note": "~3 years of professional experience built concurrently with the degree — worth a line if the JD cares about tenure."
+    }
+  ],
+
+  "skills": [
+    { "id": "sk-lang-primary", "category": "Languages", "items": ["TypeScript", "Go", "Solidity"], "weight": 5 },
+    { "id": "sk-lang-secondary", "category": "Languages", "items": ["C#", "SQL"], "weight": 3 },
+    { "id": "sk-frontend", "category": "Frontend", "items": ["React", "Next.js"], "weight": 4 },
+    { "id": "sk-backend", "category": "Backend", "items": ["Node.js", "Express", ".NET", "PostgreSQL", "MongoDB"], "weight": 4 },
+    { "id": "sk-contracts", "category": "Smart Contracts", "items": ["Foundry", "Hardhat", "Aiken"], "weight": 5 },
+    { "id": "sk-chains", "category": "Blockchain", "items": ["EVM", "Cardano", "IPFS"], "weight": 4 },
+    { "id": "sk-infra", "category": "Infrastructure", "items": ["Docker", "CI/CD", "Vercel", "Railway", "DigitalOcean"], "weight": 3 },
+    { "id": "sk-ai", "category": "Practices", "items": ["Agentic AI workflows", "Solution architecture"], "weight": 3, "note": "Signal agentic/AI capability subtly as a skill — do not surface headless-bmad as a named project." },
+    { "id": "sk-process", "category": "Practices", "items": ["Jira"], "weight": 1 }
+  ],
+
+  "excluded": {
+    "$comment": "Explicit negatives so the tailoring step never claims these.",
+    "skills": ["testing frameworks as a distinct competency"],
+    "rules": [
+      "Never name ARData features that have not been confirmed as publicly disclosable.",
+      "Never state a metric marked status:needs-number until the real figure replaces the TODO.",
+      "Do not invent employers, dates, titles, technologies, or numbers under any circumstance."
+    ]
+  },
+
+  "rendering": {
+    "maxPages": 1,
+    "$comment_maxPages": "2 is acceptable at your experience level; 1 forces sharper selection. Pick one and let the tailoring step respect it.",
+    "bulletsPerRole": { "current": 4, "recent": 4, "older": 2 },
+    "template": "TODO — typst | latex | html",
+    "pdf": {
+      "requireTextLayer": true,
+      "$comment": "Non-negotiable. The old print-to-PDF was rasterized and invisible to every ATS."
+    }
+  }
+}

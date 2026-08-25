@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/modernist-f8562a2f-380c-4e83-bd66-6cba1fb04c4a/styles.css">
+<script src="_ds/modernist-f8562a2f-380c-4e83-bd66-6cba1fb04c4a/_ds_bundle.js"></script>
+<style>
+  html, body { background: var(--color-bg); }
+  @keyframes tk-blink { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+  @keyframes tk-in { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important } }
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);font-size:14px">
+
+  <div style="display:flex;align-items:center;gap:20px;padding:9px 16px;border-bottom:2px solid var(--color-divider);background:var(--color-bg);position:sticky;top:0;z-index:40">
+    <div style="font-family:var(--font-heading);font-weight:800;font-size:16px;letter-spacing:-0.02em">tailor</div>
+    <div style="width:1px;height:18px;background:var(--color-divider)"></div>
+    <div style="display:flex;gap:14px;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-neutral-700)">
+      <span>{{ counts.discovered }} discovered</span>
+      <span>{{ counts.tailored }} tailored</span>
+      <span>{{ counts.approved }} approved</span>
+      <span>{{ counts.submitted }} submitted</span>
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+      <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-600);white-space:nowrap">{{ boardsLabel }}</span>
+      <span style="width:1px;height:18px;background:var(--color-divider)"></span>
+      <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-600)">jump</span>
+      <select class="input" style="width:auto;min-height:28px;font-size:12px;padding:2px 8px" value="{{ jumpValue }}" onChange="{{ onJump }}">
+        <option value="queue">Queue</option>
+        <option value="empty">Empty queue</option>
+        <option value="tailoring">Tailoring in progress</option>
+        <option value="review">Review — Ondo</option>
+        <option value="fabrication">Validation failure</option>
+        <option value="blocked">Blocked metric</option>
+        <option value="handoff">Submission handoff</option>
+        <option value="unsupported">Unsupported form</option>
+      </select>
+    </div>
+  </div>
+
+  <sc-if value="{{ isQueue }}" hint-placeholder-val="{{ true }}">
+    <div style="padding:16px 16px 60px">
+      <div style="display:flex;align-items:flex-end;gap:16px;margin-bottom:12px">
+        <h1 style="font-size:30px;margin:0;letter-spacing:-0.03em">Queue</h1>
+        <div style="font-size:12px;color:var(--color-neutral-700);padding-bottom:5px;white-space:nowrap">{{ subtitle }}</div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-600)">sort</span>
+          <select class="input" style="width:auto;min-height:30px;font-size:12px;padding:2px 8px" value="{{ sort }}" onChange="{{ onSort }}">
+            <option value="score">Match score</option>
+            <option value="date">Date discovered</option>
+            <option value="company">Company</option>
+          </select>
+          <button class="btn btn-secondary" style="min-height:30px;padding:4px 10px" onClick="{{ onRescan }}">Scan boards</button>
+        </div>
+      </div>
+
+      <sc-if value="{{ hasRows }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;gap:0;border:1px solid var(--color-divider);width:fit-content;margin-bottom:14px">
+        <sc-for list="{{ filters }}" as="f" hint-placeholder-count="6">
+          <button style="{{ f.style }}" onClick="{{ f.onClick }}">{{ f.label }} <span style="opacity:.55;margin-left:6px">{{ f.count }}</span></button>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ hasSelection }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:var(--color-text);color:var(--color-bg);margin-bottom:0;animation:tk-in .12s ease-out">
+          <span style="font-family:var(--font-heading);font-weight:800;font-size:13px">{{ selectedCount }} selected</span>
+          <button class="btn" style="color:var(--color-bg);border-color:var(--color-bg);border-width:1px;min-height:28px;padding:3px 10px;font-size:12px" onClick="{{ onBulkSkip }}">Skip selected</button>
+          <button class="btn" style="color:var(--color-bg);opacity:.7;min-height:28px;padding:3px 6px;font-size:12px" onClick="{{ onClearSelection }}">Clear</button>
+        </div>
+      </sc-if>
+
+      <table class="table" style="font-size:13.5px">
+        <thead>
+          <tr>
+            <th style="width:28px;padding:6px 8px"></th>
+            <th style="padding:6px 8px">Company / role</th>
+            <th style="padding:6px 8px;width:150px">Location</th>
+            <th style="padding:6px 8px;width:100px">Source</th>
+            <th style="padding:6px 8px;width:88px">Found</th>
+            <th style="padding:6px 8px;width:120px">Match</th>
+            <th style="padding:6px 8px;width:104px">State</th>
+            <th style="padding:6px 8px;width:150px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <sc-for list="{{ rows }}" as="row" hint-placeholder-count="8">
+            <tr style="{{ row.rowStyle }}" onClick="{{ row.onOpen }}">
+              <td style="padding:5px 8px;text-align:center">
+                <input type="checkbox" style="accent-color:var(--color-accent);cursor:pointer" checked="{{ row.checked }}" onChange="{{ row.onCheck }}" onClick="{{ stop }}">
+              </td>
+              <td style="padding:5px 8px">
+                <span style="font-family:var(--font-heading);font-weight:800">{{ row.company }}</span>
+                <span style="color:var(--color-neutral-500);margin:0 6px">/</span>
+                <span>{{ row.role }}</span>
+              </td>
+              <td style="padding:5px 8px;color:var(--color-neutral-700)">{{ row.location }}</td>
+              <td style="padding:5px 8px;color:var(--color-neutral-700);font-size:12px;letter-spacing:0.04em;text-transform:uppercase">{{ row.source }}</td>
+              <td style="padding:5px 8px;color:var(--color-neutral-700);font-variant-numeric:tabular-nums">{{ row.found }}</td>
+              <td style="padding:5px 8px">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-family:var(--font-heading);font-weight:800;font-variant-numeric:tabular-nums;width:26px">{{ row.score }}</span>
+                  <span style="flex:1;height:6px;background:var(--color-neutral-300);position:relative">
+                    <span style="{{ row.barStyle }}"></span>
+                  </span>
+                </div>
+              </td>
+              <td style="padding:5px 8px"><span class="{{ row.stateClass }}" style="font-family:var(--font-heading);font-weight:800;font-size:10.5px;letter-spacing:0.08em;text-transform:uppercase">{{ row.state }}</span></td>
+              <td style="padding:5px 8px;text-align:right">
+                <div style="display:flex;gap:4px;justify-content:flex-end">
+                  <button class="btn btn-secondary" style="min-height:26px;padding:2px 9px;font-size:12px" onClick="{{ row.onPrimary }}">{{ row.primaryLabel }}</button>
+                  <button class="btn" style="min-height:26px;padding:2px 7px;font-size:12px;color:var(--color-neutral-700)" onClick="{{ row.onSkip }}">Skip</button>
+                </div>
+              </td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+      <div style="display:flex;gap:18px;margin-top:14px;font-size:11px;color:var(--color-neutral-600);letter-spacing:0.04em">
+        <span><b style="font-family:var(--font-heading)">j / k</b> move</span>
+        <span><b style="font-family:var(--font-heading)">o</b> open</span>
+        <span><b style="font-family:var(--font-heading)">x</b> select</span>
+        <span><b style="font-family:var(--font-heading)">s</b> skip</span>
+        <span><b style="font-family:var(--font-heading)">t</b> tailor</span>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isEmptyQueue }}" hint-placeholder-val="{{ false }}">
+        <div style="border:2px solid var(--color-divider);padding:28px 24px;display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:40px">
+          <div>
+            <h2 style="font-size:24px;margin:0 0 8px;letter-spacing:-0.02em">Nothing discovered yet</h2>
+            <p style="font-size:13.5px;color:var(--color-neutral-800);max-width:44ch">Add a company job board and the scanner picks up new postings every 30 minutes. Paste a Greenhouse, Lever, Ashby or Workable board URL.</p>
+            <div style="display:flex;gap:6px;margin-top:14px">
+              <input class="input" style="flex:1" placeholder="boards.greenhouse.io/ondofinance" value="{{ boardDraft }}" onChange="{{ onBoardDraft }}">
+              <button class="btn btn-primary" style="padding:6px 14px" onClick="{{ onAddBoard }}">Add board</button>
+            </div>
+            <div style="font-size:12px;color:var(--color-neutral-700);margin-top:10px">Or import a list — one URL per line — from a file.</div>
+          </div>
+          <div>
+            <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:8px">Suggested from your resume tags</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <sc-for list="{{ suggestions }}" as="s" hint-placeholder-count="8">
+                <button class="btn btn-secondary" style="min-height:28px;padding:3px 10px;font-size:12px" onClick="{{ s.onAdd }}">+ {{ s.name }}</button>
+              </sc-for>
+            </div>
+            <div style="margin-top:20px;font-size:12px;color:var(--color-neutral-700);border-top:1px solid var(--color-divider);padding-top:10px">Source resume: <span style="color:var(--color-text)">resume.base.yaml</span> · 31 bullets · 2 marked incomplete</div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isTailoring }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:16px">
+      <div style="border:2px solid var(--color-text);background:#fff;max-width:1180px">
+        <div style="display:flex;align-items:baseline;gap:14px;padding:12px 16px;border-bottom:2px solid var(--color-text)">
+          <h2 style="margin:0;font-size:20px;letter-spacing:-0.02em">Tailoring — {{ tailorJob.company }} / {{ tailorJob.role }}</h2>
+          <span style="font-size:12px;color:var(--color-neutral-700);margin-left:auto;font-variant-numeric:tabular-nums">{{ tailorElapsed }}s elapsed · est. {{ tailorEta }}s</span>
+        </div>
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) 320px">
+          <div style="padding:14px 16px;border-right:1px solid var(--color-divider)">
+            <sc-for list="{{ tailorSteps }}" as="st" hint-placeholder-count="6">
+              <div style="display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--color-divider)">
+                <span style="{{ st.markStyle }}">{{ st.mark }}</span>
+                <span style="{{ st.labelStyle }}">{{ st.label }} <span style="color:var(--color-neutral-600);font-weight:400">{{ st.detail }}</span></span>
+                <span style="font-size:12px;color:var(--color-neutral-600);font-variant-numeric:tabular-nums">{{ st.time }}</span>
+              </div>
+            </sc-for>
+            <div style="margin-top:14px;height:8px;background:var(--color-neutral-300)">
+              <div style="{{ tailorBarStyle }}"></div>
+            </div>
+          </div>
+          <div style="padding:14px 16px;font-size:12.5px;color:var(--color-neutral-800)">
+            <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:8px">Matched so far</div>
+            <sc-for list="{{ tailorMatches }}" as="m" hint-placeholder-count="4">
+              <div style="padding:4px 0;border-bottom:1px solid var(--color-divider);animation:tk-in .15s ease-out">{{ m }}</div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="padding:10px 16px;border-top:2px solid var(--color-text);display:flex;gap:8px;align-items:center">
+          <button class="btn btn-secondary" style="min-height:30px" onClick="{{ onCancelTailor }}">Cancel</button>
+          <span style="font-size:12px;color:var(--color-neutral-700)">Runs locally against your source resume. Nothing is submitted.</span>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isReview }}" hint-placeholder-val="{{ false }}">
+    <div>
+      <div style="display:flex;align-items:center;gap:14px;padding:8px 16px;border-bottom:1px solid var(--color-divider);position:sticky;top:39px;background:var(--color-bg);z-index:30">
+        <button class="btn btn-secondary" style="min-height:28px;padding:3px 10px;font-size:12px" onClick="{{ onBack }}">← Queue</button>
+        <div style="font-family:var(--font-heading);font-weight:800;font-size:17px;letter-spacing:-0.02em">{{ job.company }}</div>
+        <div style="font-size:14px;color:var(--color-neutral-800)">{{ job.role }}</div>
+        <div style="font-size:12px;color:var(--color-neutral-600);text-transform:uppercase;letter-spacing:0.06em">{{ job.source }} · {{ job.location }}</div>
+        <div style="display:flex;align-items:baseline;gap:5px;margin-left:4px">
+          <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-600)">match</span>
+          <span style="font-family:var(--font-heading);font-weight:800;font-size:15px;font-variant-numeric:tabular-nums">{{ job.score }}</span>
+        </div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span style="font-size:11.5px;color:var(--color-neutral-700)">{{ pendingLabel }}</span>
+          <button class="btn" style="min-height:30px;color:var(--color-neutral-800)" onClick="{{ onSkipCurrent }}">Skip job <span style="opacity:.5;margin-left:4px">s</span></button>
+          <button class="btn btn-primary" style="min-height:30px;padding:6px 14px" disabled="{{ approveDisabled }}" onClick="{{ onApprove }}">Approve and hand off <span style="opacity:.65;margin-left:6px">a</span></button>
+        </div>
+      </div>
+
+      <sc-if value="{{ hasBlockedMetric }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:flex-start;gap:14px;padding:10px 16px;background:var(--color-accent-200);border-bottom:2px solid var(--color-accent-700)">
+          <span style="font-family:var(--font-heading);font-weight:800;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-accent-800);padding-top:1px">Render blocked</span>
+          <div style="font-size:13px;color:var(--color-accent-900);max-width:90ch">A tailored bullet uses <b>payments.throughput_usd</b>, marked incomplete in your source resume. Fill it in or drop the bullet — the PDF will not render until one of those happens.</div>
+          <div style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn btn-primary" style="min-height:28px;padding:3px 10px;font-size:12px" onClick="{{ onFillMetric }}">Fill metric</button>
+            <button class="btn btn-secondary" style="min-height:28px;padding:3px 10px;font-size:12px;border-color:var(--color-accent-700);color:var(--color-accent-800)" onClick="{{ onDropBlocked }}">Drop bullet</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <div style="display:grid;grid-template-columns:minmax(0,23fr) minmax(0,42fr) minmax(0,35fr);align-items:stretch;min-height:calc(100vh - 78px)">
+
+        <div style="border-right:2px solid var(--color-divider);display:flex;flex-direction:column;min-width:0">
+          <div style="display:flex;border-bottom:1px solid var(--color-divider)">
+            <button style="{{ tabJdStyle }}" onClick="{{ onTabJd }}">Job description</button>
+            <button style="{{ tabQStyle }}" onClick="{{ onTabQ }}">Answers <span style="opacity:.6">3</span></button>
+          </div>
+          <sc-if value="{{ tabIsJd }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:12px 14px;overflow:auto;max-height:calc(100vh - 118px)">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:10.5px;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:10px">
+                <span style="white-space:nowrap">{{ job.found }} · {{ jdWordCount }} words</span>
+                <button class="btn" style="margin-left:auto;min-height:22px;padding:1px 6px;font-size:10.5px;letter-spacing:0.06em;color:var(--color-accent-700);white-space:nowrap" onClick="{{ onToggleMarks }}">{{ marksLabel }}</button>
+              </div>
+              <sc-for list="{{ jdBlocks }}" as="b" hint-placeholder-count="7">
+                <div style="{{ b.blockStyle }}">
+                  <sc-if value="{{ b.isHeading }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;margin:14px 0 4px">{{ b.text }}</div>
+                  </sc-if>
+                  <sc-if value="{{ b.isBody }}" hint-placeholder-val="{{ true }}">
+                    <div style="font-size:13px;line-height:1.5;margin-bottom:6px;color:var(--color-neutral-900)">
+                      <sc-for list="{{ b.segs }}" as="sg" hint-placeholder-count="3">
+                        <span style="{{ sg.style }}" title="{{ sg.title }}">{{ sg.text }}</span>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ tabIsQ }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:12px 14px;overflow:auto;max-height:calc(100vh - 118px);display:flex;flex-direction:column;gap:14px">
+              <div style="font-size:11.5px;color:var(--color-neutral-700)">Pre-filled from your source data. Edits here are part of what you approve.</div>
+              <sc-for list="{{ answers }}" as="a" hint-placeholder-count="3">
+                <div class="field">
+                  <label style="font-size:11px;letter-spacing:0.06em;text-transform:uppercase">{{ a.label }}</label>
+                  <sc-if value="{{ a.isLong }}" hint-placeholder-val="{{ false }}">
+                    <textarea class="input" style="font-size:13px;line-height:1.5;min-height:150px" value="{{ a.value }}" onChange="{{ a.onChange }}"></textarea>
+                  </sc-if>
+                  <sc-if value="{{ a.isShort }}" hint-placeholder-val="{{ true }}">
+                    <input class="input" style="font-size:13px" value="{{ a.value }}" onChange="{{ a.onChange }}">
+                  </sc-if>
+                  <div style="font-size:11px;color:var(--color-neutral-600);margin-top:4px">{{ a.note }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="background:#fff;border-right:2px solid var(--color-divider);min-width:0;display:flex;flex-direction:column">
+          <div style="padding:12px 18px 10px;border-bottom:2px solid var(--color-text);position:sticky;top:78px;background:#fff;z-index:20">
+            <div style="display:flex;align-items:baseline;gap:12px">
+              <h2 style="margin:0;font-size:22px;letter-spacing:-0.03em">Proposed changes</h2>
+              <div style="display:flex;gap:12px;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-neutral-700);margin-left:auto">
+                <span><b style="font-family:var(--font-heading);color:var(--color-text)">{{ diffCounts.reworded }}</b> reworded</span>
+                <span><b style="font-family:var(--font-heading);color:var(--color-text)">{{ diffCounts.kept }}</b> kept</span>
+                <span><b style="font-family:var(--font-heading);color:var(--color-text)">{{ diffCounts.dropped }}</b> dropped</span>
+              </div>
+            </div>
+            <sc-if value="{{ hasFlags }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:4px 8px;background:var(--color-accent);color:var(--color-bg)">
+                <span style="font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:0.1em;text-transform:uppercase">{{ flagCount }} flagged</span>
+                <span style="font-size:12px">Reads beyond your source data. Resolve before approving.</span>
+                <button class="btn" style="margin-left:auto;min-height:24px;padding:1px 8px;font-size:11.5px;color:var(--color-bg);border:1px solid var(--color-bg)" onClick="{{ onJumpFlag }}">Go to it</button>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="padding:0 18px 80px;overflow:auto">
+            <sc-for list="{{ diff }}" as="d" hint-placeholder-count="6">
+              <div id="{{ d.anchor }}" style="{{ d.wrapStyle }}">
+                <div style="display:flex;align-items:baseline;gap:8px;padding:9px 0 5px">
+                  <span style="font-family:var(--font-heading);font-weight:800;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-600)">{{ d.section }}</span>
+                  <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-500)">{{ d.kindLabel }}</span>
+                  <div style="margin-left:auto;display:flex;gap:2px">
+                    <sc-if value="{{ d.canRevert }}" hint-placeholder-val="{{ false }}">
+                      <button class="btn" style="min-height:22px;padding:0 6px;font-size:11.5px;color:var(--color-accent-700)" onClick="{{ d.onRevert }}">{{ d.revertLabel }}</button>
+                    </sc-if>
+                    <sc-if value="{{ d.canRestore }}" hint-placeholder-val="{{ false }}">
+                      <button class="btn" style="min-height:22px;padding:0 6px;font-size:11.5px;color:var(--color-accent-700)" onClick="{{ d.onRestore }}">{{ d.restoreLabel }}</button>
+                    </sc-if>
+                  </div>
+                </div>
+
+                <sc-if value="{{ d.flagged }}" hint-placeholder-val="{{ false }}">
+                  <div style="background:var(--color-accent);color:var(--color-bg);padding:6px 10px;margin-bottom:0">
+                    <div style="font-family:var(--font-heading);font-weight:800;font-size:11.5px;letter-spacing:0.09em;text-transform:uppercase">Overclaim</div>
+                    <div style="font-size:12.5px;line-height:1.45;margin-top:2px">{{ d.flagWhy }}</div>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ d.hasOld }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;padding:5px 0">
+                    <span style="font-family:var(--font-heading);font-weight:800;font-size:15px;color:var(--color-neutral-500);line-height:1.4;text-align:center">−</span>
+                    <div style="font-size:14px;line-height:1.45;color:var(--color-neutral-600);text-decoration:line-through;text-decoration-thickness:1px;text-decoration-color:var(--color-neutral-400)">{{ d.old }}</div>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ d.hasNew }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;padding:2px 0 6px">
+                    <span style="{{ d.plusStyle }}">+</span>
+                    <div style="{{ d.newWrapStyle }}">
+                      <textarea style="{{ d.textStyle }}" ref="{{ d.textRef }}" value="{{ d.text }}" onChange="{{ d.onEdit }}" onInput="{{ d.onAutoSize }}"></textarea>
+                      <div style="display:flex;gap:10px;align-items:center;margin-top:3px">
+                        <span style="font-size:10.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-neutral-500)">{{ d.metaLine }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ d.showWhy }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;padding:0 0 10px">
+                    <span></span>
+                    <div style="font-size:12.5px;line-height:1.45;color:var(--color-neutral-700);border-left:1px solid var(--color-neutral-300);padding-left:8px">
+                      <span style="font-family:var(--font-heading);font-weight:800;font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-accent-700);margin-right:6px">why</span>{{ d.why }}
+                    </div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ d.showWhyToggle }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding:0 0 10px 30px">
+                    <button class="btn" style="min-height:20px;padding:0;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-accent-700)" onClick="{{ d.onWhy }}">{{ d.whyToggleLabel }}</button>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="min-width:0;display:flex;flex-direction:column;background:var(--color-surface)">
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--color-divider)">
+            <span style="font-size:10.5px;letter-spacing:0.09em;text-transform:uppercase;color:var(--color-neutral-700)">{{ pdfLabel }}</span>
+            <span style="margin-left:auto;font-size:11px;color:var(--color-neutral-600);font-variant-numeric:tabular-nums">{{ pdfMeta }}</span>
+          </div>
+          <div style="padding:14px;overflow:auto;max-height:calc(100vh - 118px)">
+            <sc-if value="{{ pdfBlocked }}" hint-placeholder-val="{{ false }}">
+              <div style="border:2px solid var(--color-accent-700);background:var(--color-accent-100);padding:16px">
+                <div style="font-family:var(--font-heading);font-weight:800;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-accent-800)">No render</div>
+                <div style="font-size:13px;color:var(--color-accent-900);margin-top:6px;line-height:1.5">Bullet 2 of <b>Vessel Finance</b> requires <b>payments.throughput_usd</b>. Source value: <b>empty</b>.</div>
+                <div style="font-size:12.5px;color:var(--color-accent-900);margin-top:10px;border-top:1px solid var(--color-accent-700);padding-top:8px">Last good render: {{ lastRender }}</div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ pdfReady }}" hint-placeholder-val="{{ true }}">
+              <div style="background:#fff;box-shadow:var(--shadow-md);padding:38px 34px;font-size:11px;line-height:1.45;color:#201e1d;position:relative">
+                <div style="font-family:var(--font-heading);font-weight:800;font-size:23px;letter-spacing:-0.03em;line-height:1">{{ resume.name }}</div>
+                <div style="font-size:10.5px;color:var(--color-neutral-700);margin-top:5px;display:flex;flex-wrap:wrap;gap:8px">
+                  <span>{{ resume.title }}</span><span>·</span><span>{{ resume.place }}</span><span>·</span><span>{{ resume.contact }}</span>
+                </div>
+                <div style="height:2px;background:#201e1d;margin:12px 0 14px"></div>
+                <sc-for list="{{ resume.sections }}" as="sec" hint-placeholder-count="3">
+                  <div style="margin-bottom:14px">
+                    <div style="font-family:var(--font-heading);font-weight:800;font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;border-bottom:1px solid var(--color-neutral-400);padding-bottom:3px;margin-bottom:7px">{{ sec.title }}</div>
+                    <sc-for list="{{ sec.entries }}" as="e" hint-placeholder-count="2">
+                      <div style="margin-bottom:9px">
+                        <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">
+                          <span style="font-family:var(--font-heading);font-weight:800;font-size:11.5px">{{ e.org }}</span>
+                          <span style="font-size:9.5px;color:var(--color-neutral-700);font-variant-numeric:tabular-nums;white-space:nowrap">{{ e.dates }}</span>
+                        </div>
+                        <div style="font-size:10.5px;color:var(--color-neutral-800);font-style:italic">{{ e.role }}</div>
+                        <sc-for list="{{ e.bullets }}" as="bl" hint-placeholder-count="3">
+                          <div style="{{ bl.style }}">{{ bl.text }}</div>
+                        </sc-for>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-for>
+                <div style="position:absolute;left:0;right:0;bottom:0;height:0;border-top:1px dashed var(--color-neutral-400)"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:5px 2px">
+                <span>page 1 of 1 · letter</span>
+                <span>{{ resume.fill }} of page used</span>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isHandoff }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:24px 16px;display:flex;justify-content:center">
+      <div style="width:min(880px,100%);border:2px solid var(--color-text);background:#fff">
+        <div style="padding:14px 18px;border-bottom:2px solid var(--color-text);display:flex;align-items:baseline;gap:12px">
+          <h2 style="margin:0;font-size:21px;letter-spacing:-0.02em">{{ handoffTitle }}</h2>
+          <span style="font-size:12.5px;color:var(--color-neutral-700);margin-left:auto">{{ job.company }} / {{ job.role }} · {{ job.source }}</span>
+        </div>
+
+        <sc-if value="{{ handoffWaiting }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:18px">
+            <p style="font-size:14.5px;max-width:70ch;line-height:1.5">A browser window is opening with {{ job.source }}'s form already filled in. Read it there and click submit yourself — this app never submits for you.</p>
+            <div style="border-top:1px solid var(--color-divider);margin-top:6px">
+              <sc-for list="{{ handoffSteps }}" as="h" hint-placeholder-count="4">
+                <div style="display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;padding:8px 0;border-bottom:1px solid var(--color-divider);align-items:baseline">
+                  <span style="{{ h.markStyle }}">{{ h.mark }}</span>
+                  <span style="{{ h.labelStyle }}">{{ h.label }}</span>
+                  <span style="font-size:12px;color:var(--color-neutral-600)">{{ h.detail }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:16px;align-items:center">
+              <button class="btn btn-secondary" style="min-height:32px" onClick="{{ onReopen }}">Reopen window</button>
+              <button class="btn" style="min-height:32px;color:var(--color-neutral-800)" onClick="{{ onBack }}">Back to queue</button>
+              <span style="margin-left:auto;font-size:12px;color:var(--color-neutral-700)">Waiting for you to finish in the browser.</span>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ handoffUnsupported }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:18px">
+            <div style="border-left:4px solid var(--color-accent);padding-left:12px;margin-bottom:14px">
+              <div style="font-family:var(--font-heading);font-weight:800;font-size:12px;letter-spacing:0.09em;text-transform:uppercase;color:var(--color-accent-700)">No adapter for this form</div>
+              <div style="font-size:14px;max-width:70ch;line-height:1.5;margin-top:4px">{{ job.company }} uses a custom form the app can't fill. The tab is open and your tailored PDF is on disk — fill it in manually this once.</div>
+            </div>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0;border:1px solid var(--color-divider)">
+              <div style="padding:12px 14px;border-right:1px solid var(--color-divider)">
+                <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:6px">On disk</div>
+                <div style="font-size:13.5px">out/emurgo-fullstack-defi.pdf</div>
+                <div style="font-size:12px;color:var(--color-neutral-700);margin-top:2px">1 page · rendered {{ lastRender }}</div>
+                <div style="display:flex;gap:6px;margin-top:10px">
+                  <button class="btn btn-secondary" style="min-height:28px;padding:3px 10px;font-size:12px" onClick="{{ onReveal }}">Reveal file</button>
+                  <button class="btn btn-secondary" style="min-height:28px;padding:3px 10px;font-size:12px" onClick="{{ onCopyAnswers }}">Copy answers</button>
+                </div>
+              </div>
+              <div style="padding:12px 14px">
+                <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:6px">Answers to paste</div>
+                <sc-for list="{{ answers }}" as="a" hint-placeholder-count="3">
+                  <div style="padding:4px 0;border-bottom:1px solid var(--color-divider);font-size:12.5px">
+                    <span style="color:var(--color-neutral-700)">{{ a.label }}:</span> {{ a.short }}
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:16px">
+              <button class="btn btn-primary" style="min-height:32px" onClick="{{ onAskConfirm }}">I filled it in</button>
+              <button class="btn" style="min-height:32px;color:var(--color-neutral-800)" onClick="{{ onBack }}">Back to queue</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ handoffConfirm }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:18px">
+            <p style="font-size:15px;max-width:66ch;line-height:1.5">Control is back here. Did you submit the application to {{ job.company }}?</p>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn btn-primary" style="min-height:34px;padding:7px 16px" onClick="{{ onSubmitted }}">I submitted it</button>
+              <button class="btn btn-secondary" style="min-height:34px;padding:7px 16px" onClick="{{ onBailed }}">I bailed — keep it approved</button>
+              <button class="btn" style="min-height:34px;color:var(--color-neutral-800)" onClick="{{ onSkipCurrent }}">Skip this job</button>
+            </div>
+            <div style="font-size:12px;color:var(--color-neutral-700);margin-top:12px;border-top:1px solid var(--color-divider);padding-top:8px">Only you know what happened in that window, so the app asks instead of guessing.</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ handoffDone }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:18px">
+            <div style="font-family:var(--font-heading);font-weight:800;font-size:16px">Marked submitted · {{ submittedAt }}</div>
+            <p style="font-size:13.5px;color:var(--color-neutral-800);margin-top:6px">{{ nextLabel }}</p>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="btn btn-primary" style="min-height:32px" onClick="{{ onNextJob }}">Next in queue</button>
+              <button class="btn btn-secondary" style="min-height:32px" onClick="{{ onBack }}">Back to queue</button>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ showFabrication }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:60;background:color-mix(in srgb, var(--color-neutral-900) 55%, transparent);display:grid;place-items:center;padding:24px">
+      <div style="width:min(760px,100%);background:var(--color-bg);border:2px solid var(--color-accent);box-shadow:var(--shadow-lg);animation:tk-in .14s ease-out">
+        <div style="background:var(--color-accent);color:var(--color-bg);padding:12px 16px">
+          <div style="font-family:var(--font-heading);font-weight:800;font-size:11.5px;letter-spacing:0.14em;text-transform:uppercase">Tailoring rejected — fabricated claim</div>
+          <div style="font-family:var(--font-heading);font-weight:800;font-size:23px;letter-spacing:-0.02em;margin-top:4px">{{ fabJob }} — nothing was written to your resume</div>
+        </div>
+        <div style="padding:16px">
+          <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:5px">Rejected bullet</div>
+          <div style="border-left:4px solid var(--color-accent);padding:6px 0 6px 12px;font-size:14.5px;line-height:1.45;font-weight:600">{{ fabBullet }}</div>
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0;border:1px solid var(--color-divider);margin-top:14px">
+            <div style="padding:10px 12px;border-right:1px solid var(--color-divider)">
+              <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:4px">Why it failed</div>
+              <div style="font-size:13px;line-height:1.5">No entry in <b>resume.base.yaml</b> mentions a validator client, staking, or 4,000 nodes. The claim has no source.</div>
+            </div>
+            <div style="padding:10px 12px">
+              <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-600);margin-bottom:4px">Closest real experience</div>
+              <div style="font-size:13px;line-height:1.5">“Contributed to open source Cardano infrastructure at the protocol level, including node tooling.”</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px;align-items:center">
+            <button class="btn btn-primary" style="min-height:32px" onClick="{{ onRerun }}">Re-run without this claim</button>
+            <button class="btn btn-secondary" style="min-height:32px" onClick="{{ onOpenSource }}">Open resume.base.yaml</button>
+            <button class="btn" style="min-height:32px;color:var(--color-neutral-800);margin-left:auto" onClick="{{ onDismissFab }}">Leave it untailored</button>
+          </div>
+          <div style="font-size:11.5px;color:var(--color-neutral-700);margin-top:10px">Logged to <b>rejections.log</b> · 3rd rejection from this model this week</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ showToast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;bottom:16px;left:16px;z-index:50;background:var(--color-text);color:var(--color-bg);padding:8px 12px;font-size:13px;display:flex;gap:12px;align-items:center;animation:tk-in .12s ease-out">
+      <span>{{ toast }}</span>
+      <button class="btn" style="min-height:22px;padding:0 6px;font-size:12px;color:var(--color-bg);opacity:.75" onClick="{{ onUndo }}">Undo</button>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;rationale&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;always&quot;,&quot;on demand&quot;],&quot;default&quot;:&quot;always&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Diff&quot;},&quot;markRequirements&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Diff&quot;}}">
+const JOBS = [
+  { id:'ondo', company:'Ondo Finance', role:'Smart Contract Engineer', location:'Remote (US / EU)', source:'Greenhouse', found:'Aug 11', score:91 },
+  { id:'maestro', company:'Maestro', role:'Senior Protocol Engineer', location:'Remote (global)', source:'Lever', found:'Aug 11', score:86 },
+  { id:'blockdaemon', company:'Blockdaemon', role:'Senior Protocol Engineer', location:'Remote (global)', source:'Lever', found:'Aug 11', score:88 },
+  { id:'vessel', company:'Vessel Finance', role:'Backend Engineer (Go)', location:'Remote (APAC ok)', source:'Ashby', found:'Aug 10', score:74 },
+  { id:'emurgo', company:'Emurgo', role:'Full Stack Engineer (DeFi)', location:'Remote (APAC)', source:'Workable', found:'Aug 10', score:83 },
+  { id:'alchemy', company:'Alchemy', role:'Full Stack Engineer', location:'Remote (US)', source:'Greenhouse', found:'Aug 9', score:69 },
+  { id:'dydx', company:'dYdX Trading', role:'Smart Contract Engineer', location:'Remote (EU)', source:'Ashby', found:'Aug 9', score:62 },
+  { id:'chainstack', company:'Chainstack', role:'Backend Engineer (Go)', location:'Remote (EU)', source:'Lever', found:'Aug 8', score:58 },
+  { id:'anchorage', company:'Anchorage Digital', role:'Protocol Engineer', location:'Remote (US only)', source:'Greenhouse', found:'Aug 8', score:44 },
+  { id:'fireblocks', company:'Fireblocks', role:'Senior Backend Engineer', location:'Hybrid — Tel Aviv', source:'Workable', found:'Aug 7', score:51 }
+];
+
+const START_STATE = { ondo:'Tailored', maestro:'Tailored', blockdaemon:'Discovered', vessel:'Tailored', emurgo:'Approved', alchemy:'Submitted', dydx:'Skipped', chainstack:'Discovered', anchorage:'Discovered', fireblocks:'Skipped' };
+
+const JD = {
+  ondo: [
+    { h:'About the role' },
+    { p:'Ondo builds tokenized treasuries and on-chain yield products. You will own contracts from spec to mainnet, working directly with the protocol and product teams.' },
+    { h:'What you will do' },
+    { p:'Take [[end-to-end ownership]] of Solidity contracts: design, tests, review, deployment and monitoring on Ethereum mainnet and L2s.' },
+    { p:'Work across the stack — contracts, [[Go]] indexing services and the [[TypeScript]] front end — so integrations ship as one piece.' },
+    { p:'Drive [[remediation of third-party security audits]] and keep our internal review bar high.' },
+    { p:'Contribute to [[open source protocol infrastructure]] we depend on.' },
+    { h:'What we look for' },
+    { p:'3+ years shipping production software, at least 1 of them on [[EVM smart contracts]].' },
+    { p:'Comfortable owning a system alone in a small, remote, senior team.' },
+    { p:'Bonus: experience in [[DeFi protocols]] with real value at risk, or non-EVM chains.' }
+  ],
+  maestro: [
+    { h:'About the role' },
+    { p:'Maestro is the largest infrastructure provider on [[Cardano]]. You will work at the [[protocol level]] on indexing, node tooling and developer APIs.' },
+    { h:'What we look for' },
+    { p:'Deep experience with [[Cardano]] or another non-EVM chain and its [[node tooling]].' },
+    { p:'Strong [[Go]] or Rust, and a bias for open source contribution.' }
+  ],
+  vessel: [
+    { h:'About the role' },
+    { p:'Vessel moves stablecoin payments for exporters across Southeast Asia. We need a [[Go]] backend engineer who has run money at [[volume]].' },
+    { h:'What we look for' },
+    { p:'Production [[Go]] services, [[payment throughput]] you can speak to in numbers, and comfort with on-chain settlement.' }
+  ]
+};
+
+const DIFFS = {
+  ondo: [
+    { id:'d1', kind:'reworded', section:'Sanctum Labs · 2023–2025',
+      old:'Integrated new smart contracts across backend and frontend and handled their on-chain deployment for two production DeFi protocols.',
+      neu:'Owned smart contract integration end to end — Solidity contracts, Go indexing services and the TypeScript front end — and ran mainnet deployments for two production DeFi protocols.',
+      why:'Posting asks for “end-to-end ownership” and names Solidity, Go and TypeScript by name. Same facts, their vocabulary.' },
+    { id:'d2', kind:'reworded', section:'Sanctum Labs · 2023–2025', flagged:true,
+      old:'Shipped smart contract updates remediating findings from a third-party security audit.',
+      neu:'Led remediation of a third-party security audit, hardening the protocol against critical findings ahead of a $40M TVL launch.',
+      why:'“Drive remediation of third-party security audits” is a stated requirement, so the model pushed this bullet forward.',
+      flagWhy:'“Led remediation” and “$40M TVL” are not in your source data. You shipped the fixes; you did not own the engagement, and no TVL figure exists for that launch.' },
+    { id:'d3', kind:'reworded', section:'Sanctum Labs · 2023–2025',
+      old:'Led a team of 8–10 engineers plus 3 designers and 2 admin staff, reporting directly to the CEO.',
+      neu:'Led a 13-person team (8–10 engineers, 3 designers, 2 admin) reporting to the CEO, while staying hands-on in contracts and backend.',
+      why:'Compressed to one line and added the hands-on clause — the role is senior IC, not management.' },
+    { id:'d4', kind:'kept', section:'Open source',
+      neu:'Contributed to open source Cardano infrastructure at the protocol level, including node tooling.',
+      why:'Matches “contribute to open source protocol infrastructure”. Selected, kept verbatim.' },
+    { id:'d5', kind:'kept', section:'Sanctum Labs · 2023–2025',
+      neu:'Wrote and maintained Foundry test suites, including fork tests against mainnet state.',
+      why:'Supports the “design, tests, review” requirement. Selected, kept verbatim.' },
+    { id:'d6', kind:'dropped', section:'Northbound · 2022–2023',
+      old:'Built internal analytics dashboards in React and Postgres for a logistics client.',
+      why:'No signal for this role. Dropping it frees the line the audit bullet needed.' },
+    { id:'d7', kind:'dropped', section:'Sanctum Labs · 2023–2025',
+      old:'Ran weekly sprint planning and the engineering hiring loop.',
+      why:'Leadership is already carried by the team bullet; this reads as process, not protocol work.' }
+  ],
+  maestro: [
+    { id:'m1', kind:'reworded', section:'Open source',
+      old:'Contributed to open source Cardano infrastructure at the protocol level, including node tooling.',
+      neu:'Contributed to open source Cardano protocol infrastructure — node tooling and chain-following services used by other operators.',
+      why:'Posting is Cardano-specific and names node tooling. Added who the work serves.' },
+    { id:'m2', kind:'kept', section:'Sanctum Labs · 2023–2025',
+      neu:'Built Go services indexing on-chain events for two production DeFi protocols.',
+      why:'Matches “strong Go”. Selected, kept verbatim.' },
+    { id:'m3', kind:'dropped', section:'Northbound · 2022–2023',
+      old:'Built internal analytics dashboards in React and Postgres for a logistics client.',
+      why:'Off-target for a protocol role.' }
+  ],
+  vessel: [
+    { id:'v1', kind:'reworded', section:'Sanctum Labs · 2023–2025', blocked:true,
+      old:'Built Go services indexing on-chain events for two production DeFi protocols.',
+      neu:'Built Go settlement and indexing services handling {{payments.throughput_usd}} in on-chain volume.',
+      why:'Posting wants payment throughput in numbers, so the model reached for the volume metric.' },
+    { id:'v2', kind:'kept', section:'Sanctum Labs · 2023–2025',
+      neu:'Integrated new smart contracts across backend and frontend for two production DeFi protocols.',
+      why:'Covers on-chain settlement experience. Selected, kept verbatim.' }
+  ]
+};
+
+const RESUME = {
+  name:'Jomar Villanueva',
+  title:'Full stack engineer — TypeScript / Go / Solidity',
+  place:'Cebu City, PH (UTC+8)',
+  contact:'jomar.v@fastmail.com · github.com/jmrv'
+};
+
+const SUGGESTIONS = ['Ondo Finance','Blockdaemon','Maestro','Emurgo','dYdX Trading','Chainstack','Anchorage Digital','Vessel Finance'];
+
+const TAILOR_STEPS = [
+  { label:'Fetch posting', detail:'lever.co · 1 request', ms:900 },
+  { label:'Extract requirements', detail:'14 found', ms:1400 },
+  { label:'Match against source resume', detail:'31 bullets scored', ms:1800 },
+  { label:'Rewrite selected bullets', detail:'5 of 9 selected', ms:3200 },
+  { label:'Validate every claim against source', detail:'', ms:1600 },
+  { label:'Render PDF', detail:'1 page', ms:900 }
+];
+
+const MATCHES = ['Cardano protocol work → open source bullet','Go services → indexing bullet','Node tooling → open source bullet','Team leadership → Sanctum Labs bullet'];
+
+class Component extends DCLogic {
+  state = {
+    screen:'queue', jobId:'ondo', cursor:0, filter:'All', sort:'score',
+    status:Object.assign({}, START_STATE), selected:{}, emptyQueue:false,
+    tab:'jd', marks:true, edits:{}, reverted:{}, restored:{}, resolved:{}, whyOpen:{},
+    metricFilled:false, blockedDropped:false,
+    tailorJobId:null, tailorStep:-1, tailorElapsed:0, fabrication:false,
+    handoffPhase:'waiting', handoffUnsupported:false, submittedAt:null,
+    toast:null, undo:null, boardDraft:'', jump:'queue'
+  };
+
+  _areas = new Set();
+
+  fit(el) {
+    if (!el || !el.isConnected) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }
+  fitAll() {
+    this._areas.forEach(el => { if (!el.isConnected) this._areas.delete(el); else this.fit(el); });
+  }
+  componentDidMount() {
+    this._key = (e) => this.onKey(e);
+    window.addEventListener('keydown', this._key);
+    this._resize = () => this.fitAll();
+    window.addEventListener('resize', this._resize);
+    requestAnimationFrame(() => this.fitAll());
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => this.fitAll());
+  }
+  componentDidUpdate() { requestAnimationFrame(() => this.fitAll()); }
+  componentWillUnmount() {
+    window.removeEventListener('keydown', this._key);
+    window.removeEventListener('resize', this._resize);
+    clearInterval(this._tick); clearTimeout(this._step);
+  }
+
+  // ── helpers ──────────────────────────────────────────────
+  job(id) { return JOBS.find(j => j.id === (id || this.state.jobId)) || JOBS[0]; }
+  visible() {
+    const { filter, sort, status } = this.state;
+    let list = JOBS.filter(j => filter === 'All' ? true : status[j.id] === filter);
+    if (sort === 'score') list = list.slice().sort((a,b) => b.score - a.score);
+    if (sort === 'company') list = list.slice().sort((a,b) => a.company.localeCompare(b.company));
+    return list;
+  }
+  setStatus(id, s) { this.setState(st => ({ status: Object.assign({}, st.status, { [id]: s }) })); }
+  toast(msg, undo) {
+    clearTimeout(this._toast);
+    this.setState({ toast: msg, undo: undo || null });
+    this._toast = setTimeout(() => this.setState({ toast: null, undo: null }), 4200);
+  }
+  diffFor(id) { return DIFFS[id] || DIFFS.ondo; }
+
+  openJob(id) {
+    const st = this.state.status[id];
+    if (st === 'Discovered') return this.startTailor(id);
+    if (st === 'Approved') return this.setState({ screen:'handoff', jobId:id, handoffPhase:'waiting', handoffUnsupported:id==='emurgo' });
+    this.setState({ screen:'review', jobId:id, tab:'jd' });
+  }
+  skip(id) {
+    const prev = this.state.status[id];
+    this.setStatus(id, 'Skipped');
+    this.toast(this.job(id).company + ' skipped', () => this.setStatus(id, prev));
+    if (this.state.screen !== 'queue') this.setState({ screen:'queue' });
+  }
+
+  startTailor(id) {
+    clearInterval(this._tick); clearTimeout(this._step);
+    this.setState({ screen:'tailoring', tailorJobId:id, tailorStep:0, tailorElapsed:0, fabrication:false });
+    this._t0 = Date.now();
+    this._tick = setInterval(() => this.setState({ tailorElapsed: Math.round((Date.now()-this._t0)/1000) }), 400);
+    const run = (i) => {
+      if (i >= TAILOR_STEPS.length) {
+        clearInterval(this._tick);
+        if (id === 'blockdaemon') return this.setState({ fabrication:true, tailorStep:4 });
+        this.setStatus(id, 'Tailored');
+        return this.setState({ screen:'review', jobId:id, tab:'jd' });
+      }
+      this._step = setTimeout(() => { this.setState({ tailorStep: i+1 }); run(i+1); }, TAILOR_STEPS[i].ms);
+    };
+    run(0);
+  }
+
+  onKey(e) {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    const { screen } = this.state;
+    if (e.key === 'Escape') { if (screen !== 'queue') { e.preventDefault(); this.setState({ screen:'queue', fabrication:false }); } return; }
+    if (screen === 'review') {
+      if (e.key === 'a') { e.preventDefault(); this.approve(); }
+      if (e.key === 's') { e.preventDefault(); this.skip(this.state.jobId); }
+      return;
+    }
+    if (screen !== 'queue') return;
+    const list = this.visible();
+    if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); this.setState(s => ({ cursor: Math.min(list.length-1, s.cursor+1) })); }
+    if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); this.setState(s => ({ cursor: Math.max(0, s.cursor-1) })); }
+    if (e.key === 'o' || e.key === 'Enter') { e.preventDefault(); const j = list[this.state.cursor]; if (j) this.openJob(j.id); }
+    if (e.key === 't') { e.preventDefault(); const j = list[this.state.cursor]; if (j) this.startTailor(j.id); }
+    if (e.key === 's') { e.preventDefault(); const j = list[this.state.cursor]; if (j) this.skip(j.id); }
+    if (e.key === 'x') {
+      e.preventDefault(); const j = list[this.state.cursor];
+      if (j) this.setState(s => ({ selected: Object.assign({}, s.selected, { [j.id]: !s.selected[j.id] }) }));
+    }
+  }
+
+  approve() {
+    if (this.blockedActive()) return;
+    const id = this.state.jobId;
+    this.setStatus(id, 'Approved');
+    this.setState({ screen:'handoff', handoffPhase:'waiting', handoffUnsupported:id==='emurgo' });
+    clearTimeout(this._h);
+    this._h = setTimeout(() => this.setState({ handoffPhase:'confirm' }), 3600);
+  }
+  blockedActive() {
+    return this.state.jobId === 'vessel' && !this.state.metricFilled && !this.state.blockedDropped;
+  }
+
+  jumpTo(v) {
+    clearInterval(this._tick); clearTimeout(this._step); clearTimeout(this._h);
+    const base = { jump:v, emptyQueue:false, fabrication:false };
+    if (v === 'queue') this.setState(Object.assign(base, { screen:'queue' }));
+    if (v === 'empty') this.setState(Object.assign(base, { screen:'queue', emptyQueue:true }));
+    if (v === 'tailoring') { this.setState(base); this.startTailor('chainstack'); this.setState({ jump:v }); }
+    if (v === 'review') this.setState(Object.assign(base, { screen:'review', jobId:'ondo', tab:'jd' }));
+    if (v === 'fabrication') this.setState(Object.assign(base, { screen:'tailoring', tailorJobId:'blockdaemon', tailorStep:4, tailorElapsed:11, fabrication:true }));
+    if (v === 'blocked') this.setState(Object.assign(base, { screen:'review', jobId:'vessel', tab:'jd', metricFilled:false, blockedDropped:false }));
+    if (v === 'handoff') this.setState(Object.assign(base, { screen:'handoff', jobId:'ondo', handoffPhase:'waiting', handoffUnsupported:false }));
+    if (v === 'unsupported') this.setState(Object.assign(base, { screen:'handoff', jobId:'emurgo', handoffPhase:'unsupported', handoffUnsupported:true }));
+  }
+
+  // ── derived render values ────────────────────────────────
+  buildRows() {
+    const { status, selected, cursor } = this.state;
+    const list = this.visible();
+    return list.map((j, i) => {
+      const st = status[j.id];
+      const isCursor = i === cursor;
+      const dim = st === 'Skipped' || st === 'Submitted';
+      const stateClass = st === 'Tailored' ? 'tag tag-accent' : st === 'Approved' ? 'tag tag-outline' : st === 'Skipped' ? 'tag tag-neutral' : st === 'Submitted' ? 'tag tag-neutral' : 'tag tag-neutral';
+      return {
+        company:j.company, role:j.role, location:j.location, source:j.source, found:j.found, score:j.score, state:st,
+        stateClass,
+        checked: !!selected[j.id],
+        rowStyle: 'cursor:pointer;' + (isCursor ? 'box-shadow:inset 3px 0 0 var(--color-accent);background:color-mix(in srgb, var(--color-text) 5%, transparent);' : '') + (dim ? 'opacity:.5;' : ''),
+        barStyle: 'position:absolute;left:0;top:0;bottom:0;width:' + j.score + '%;background:' + (j.score >= 80 ? 'var(--color-accent)' : 'var(--color-neutral-700)'),
+        primaryLabel: st === 'Discovered' ? 'Tailor' : st === 'Tailored' ? 'Review' : st === 'Approved' ? 'Hand off' : 'Open',
+        onPrimary: (e) => { e.stopPropagation(); this.setState({ cursor:i }); this.openJob(j.id); },
+        onOpen: () => { this.setState({ cursor:i }); this.openJob(j.id); },
+        onSkip: (e) => { e.stopPropagation(); this.skip(j.id); },
+        onCheck: (e) => { e.stopPropagation(); this.setState(s => ({ selected: Object.assign({}, s.selected, { [j.id]: !s.selected[j.id] }) })); }
+      };
+    });
+  }
+
+  buildDiff() {
+    const id = this.state.jobId;
+    const items = this.diffFor(id).filter(d => !(d.blocked && this.state.blockedDropped));
+    const alwaysWhy = (this.props.rationale ?? 'always') === 'always';
+    return items.map(d => {
+      const reverted = !!this.state.reverted[d.id];
+      const restored = !!this.state.restored[d.id];
+      const resolved = !!this.state.resolved[d.id];
+      const edited = this.state.edits[d.id] !== undefined;
+      let text = d.neu || '';
+      if (d.blocked && this.state.metricFilled) text = text.replace('{{payments.throughput_usd}}', '$18M');
+      if (reverted) text = d.old || text;
+      if (edited) text = this.state.edits[d.id];
+      const flagged = d.flagged && !resolved && !reverted && !edited;
+      const isDropped = d.kind === 'dropped' && !restored;
+      const kindLabel = isDropped ? 'dropped from base resume'
+        : d.kind === 'kept' ? 'selected, unchanged'
+        : reverted ? 'reverted to original' : edited ? 'reworded, edited by you' : 'reworded by model';
+      const rule = isDropped ? '3px dashed var(--color-neutral-400)'
+        : d.kind === 'kept' ? '3px solid var(--color-neutral-400)'
+        : flagged ? '3px solid var(--color-accent)' : '3px solid var(--color-text)';
+      const meta = reverted ? 'original text · model rewrite discarded'
+        : edited ? 'your text · ' + text.trim().split(/\s+/).length + ' words'
+        : d.kind === 'kept' ? 'unchanged from source · ' + text.trim().split(/\s+/).length + ' words'
+        : 'model text · ' + text.trim().split(/\s+/).length + ' words';
+      const whyOpen = alwaysWhy || !!this.state.whyOpen[d.id];
+      return {
+        anchor:'d-' + d.id,
+        section:d.section, kindLabel, flagged: !!flagged, flagWhy:d.flagWhy, why:d.why,
+        hasOld: !!d.old && !(reverted && d.kind === 'reworded'),
+        hasNew: !isDropped,
+        old: d.old, text,
+        wrapStyle: 'border-bottom:1px solid var(--color-divider);' + (flagged ? 'background:var(--color-accent-100);margin:0 -18px;padding:0 18px;' : '') + (isDropped ? 'opacity:.72;' : ''),
+        plusStyle: 'font-family:var(--font-heading);font-weight:800;font-size:15px;line-height:1.4;text-align:center;color:' + (isDropped ? 'var(--color-neutral-500)' : flagged ? 'var(--color-accent)' : 'var(--color-text)'),
+        newWrapStyle: 'border-left:' + rule + ';padding-left:10px',
+        textStyle: 'width:100%;border:0;outline:none;background:transparent;resize:none;overflow:hidden;font-family:var(--font-body);font-size:15.5px;line-height:1.42;font-weight:' + (d.kind === 'kept' ? '400' : '600') + ';color:var(--color-text);padding:0;height:22px',
+        textRef: (el) => { if (el) { this._areas.add(el); this.fit(el); } },
+        metaLine: meta,
+        showWhy: whyOpen, showWhyToggle: !alwaysWhy,
+        whyToggleLabel: whyOpen ? 'hide why' : 'why this changed',
+        onWhy: () => this.setState(s => ({ whyOpen: Object.assign({}, s.whyOpen, { [d.id]: !s.whyOpen[d.id] }) })),
+        canRevert: !!d.old && d.kind === 'reworded',
+        revertLabel: reverted ? 'restore rewrite' : 'revert to original',
+        onRevert: () => this.setState(s => {
+          const rv = Object.assign({}, s.reverted); rv[d.id] = !rv[d.id];
+          const ed = Object.assign({}, s.edits); delete ed[d.id];
+          return { reverted: rv, edits: ed };
+        }),
+        canRestore: d.kind === 'dropped',
+        restoreLabel: restored ? 'drop again' : 'keep this bullet',
+        onRestore: () => this.setState(s => ({ restored: Object.assign({}, s.restored, { [d.id]: !s.restored[d.id] }) })),
+        onEdit: (e) => {
+          const v = e.target.value;
+          this.setState(s => ({ edits: Object.assign({}, s.edits, { [d.id]: v }) }));
+        },
+        onAutoSize: (e) => { const el = e.target; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+      };
+    });
+  }
+
+  buildJd() {
+    const blocks = JD[this.state.jobId] || JD.ondo;
+    const mark = this.state.marks && (this.props.markRequirements ?? true);
+    return blocks.map(b => {
+      if (b.h) return { isHeading:true, isBody:false, text:b.h, blockStyle:'', segs:[] };
+      const segs = b.p.split(/(\[\[[^\]]+\]\])/).filter(Boolean).map(s => {
+        const hit = s.startsWith('[[');
+        const text = hit ? s.slice(2, -2) : s;
+        return {
+          text,
+          title: hit && mark ? 'Matched to your experience' : '',
+          style: hit && mark
+            ? 'background:var(--color-accent-200);box-shadow:inset 0 -2px 0 var(--color-accent);font-weight:600'
+            : ''
+        };
+      });
+      return { isHeading:false, isBody:true, text:'', blockStyle:'', segs };
+    });
+  }
+
+  buildResume() {
+    const diff = this.buildDiff();
+    const byText = diff.filter(d => d.hasNew).map(d => d.text);
+    const sections = [
+      { title:'Experience', entries:[
+        { org:'Sanctum Labs', role:'Head of Engineering → Full stack engineer', dates:'2023 — 2025',
+          bullets: byText.slice(0, 4).map(t => ({ text:'— ' + t, style:'font-size:10.5px;line-height:1.45;margin-top:4px' })) },
+        { org:'Northbound Systems', role:'Full stack engineer', dates:'2022 — 2023',
+          bullets:[{ text:'— Built and shipped TypeScript services and React front ends for three client products.', style:'font-size:10.5px;line-height:1.45;margin-top:4px' }] }
+      ]},
+      { title:'Open source', entries:[
+        { org:'Cardano protocol infrastructure', role:'Contributor', dates:'2023 —',
+          bullets:[{ text:'— Node tooling and chain-following services; merged upstream.', style:'font-size:10.5px;line-height:1.45;margin-top:4px' }] }
+      ]},
+      { title:'Stack', entries:[
+        { org:'TypeScript · Go · Solidity', role:'EVM · Cardano · Foundry · Postgres · Docker', dates:'', bullets:[] }
+      ]}
+    ];
+    return Object.assign({}, RESUME, { sections, fill:'92%' });
+  }
+
+  buildAnswers() {
+    const a = [
+      { id:'auth', label:'Work authorization', note:'Philippine citizen. Contract or EOR — no US visa needed.',
+        value:'Not a US person; I work remotely from the Philippines and can be engaged as a contractor or through an EOR.', isLong:false, short:'PH citizen, contractor / EOR' },
+      { id:'notice', label:'Notice period', note:'From your source data.', value:'2 weeks', isLong:false, short:'2 weeks' },
+      { id:'why', label:'Why this company', note:'Model draft. 78 words — the form caps at 150.',
+        value:'I have spent the last two years shipping contracts with real value behind them, including audit remediation on two live DeFi protocols. What interests me here is the boring part done well: tokenized treasuries have to settle correctly every single day, and that is closer to payments engineering than to crypto. I have worked across contracts, Go services and the front end, so I can own an integration rather than hand it off.',
+        isLong:true, short:'78-word draft — reviewed' }
+    ];
+    return a.map(x => Object.assign({}, x, {
+      isShort: !x.isLong,
+      value: this.state.edits['ans-' + x.id] !== undefined ? this.state.edits['ans-' + x.id] : x.value,
+      onChange: (e) => { const v = e.target.value; this.setState(s => ({ edits: Object.assign({}, s.edits, { ['ans-' + x.id]: v }) })); }
+    }));
+  }
+
+  renderVals() {
+    const s = this.state;
+    const job = this.job();
+    const rows = this.buildRows();
+    const diff = this.buildDiff();
+    const counts = { discovered:0, tailored:0, approved:0, submitted:0, skipped:0 };
+    JOBS.forEach(j => { const k = (s.status[j.id] || '').toLowerCase(); if (counts[k] !== undefined) counts[k]++; });
+    const filters = ['All','Discovered','Tailored','Approved','Submitted','Skipped'].map(f => ({
+      label:f,
+      count: f === 'All' ? JOBS.length : JOBS.filter(j => s.status[j.id] === f).length,
+      onClick: () => this.setState({ filter:f, cursor:0, selected:{} }),
+      style: 'cursor:pointer;white-space:nowrap;font-family:var(--font-heading);font-weight:800;font-size:11.5px;letter-spacing:0.06em;text-transform:uppercase;padding:6px 12px;border:0;border-right:1px solid var(--color-divider);background:' +
+        (s.filter === f ? 'var(--color-text);color:var(--color-bg)' : 'transparent;color:var(--color-text)')
+    }));
+    const selCount = Object.keys(s.selected).filter(k => s.selected[k]).length;
+    const flags = diff.filter(d => d.flagged);
+    const tailorJob = this.job(s.tailorJobId || 'chainstack');
+    const stepDone = s.tailorStep;
+    const tailorSteps = TAILOR_STEPS.map((st, i) => {
+      const done = i < stepDone, active = i === stepDone;
+      const failed = s.fabrication && i === 4;
+      return {
+        label:st.label, detail: done || failed ? st.detail : '',
+        mark: failed ? '!' : done ? '✓' : active ? '›' : '·',
+        markStyle: 'font-family:var(--font-heading);font-weight:800;font-size:14px;text-align:center;color:' + (failed ? 'var(--color-accent)' : done ? 'var(--color-text)' : 'var(--color-neutral-400)') + (active && !failed ? ';animation:tk-blink 1s infinite' : ''),
+        labelStyle: 'font-size:13.5px;font-weight:' + (active || failed ? '600' : '400') + ';color:' + (failed ? 'var(--color-accent-800)' : done || active ? 'var(--color-text)' : 'var(--color-neutral-600)'),
+        time: failed ? 'rejected' : done ? (st.ms/1000).toFixed(1) + 's' : active ? 'running' : ''
+      };
+    });
+    const pct = Math.round(Math.min(1, stepDone / TAILOR_STEPS.length) * 100);
+
+    return {
+      counts, filters, rows, diff,
+      isQueue: s.screen === 'queue', isReview: s.screen === 'review', isHandoff: s.screen === 'handoff', isTailoring: s.screen === 'tailoring',
+      isEmptyQueue: s.emptyQueue,
+      hasRows: !s.emptyQueue,
+      boardsLabel: s.emptyQueue ? 'no boards yet' : 'watching 14 boards',
+      subtitle: s.emptyQueue ? 'No postings yet · 0 boards watched' : rows.length + ' of ' + JOBS.length + ' postings · last scan 12 minutes ago',
+      sort: s.sort, onSort: (e) => this.setState({ sort:e.target.value }),
+      onRescan: () => this.toast('Scanned 14 boards — no new postings'),
+      hasSelection: selCount > 0, selectedCount: selCount,
+      onBulkSkip: () => {
+        const ids = Object.keys(s.selected).filter(k => s.selected[k]);
+        const prev = {}; ids.forEach(i => prev[i] = s.status[i]);
+        this.setState(st => {
+          const status = Object.assign({}, st.status); ids.forEach(i => status[i] = 'Skipped');
+          return { status, selected:{} };
+        });
+        this.toast(ids.length + ' skipped', () => this.setState(st => ({ status: Object.assign({}, st.status, prev) })));
+      },
+      onClearSelection: () => this.setState({ selected:{} }),
+      stop: (e) => e.stopPropagation(),
+      suggestions: SUGGESTIONS.map(n => ({ name:n, onAdd: () => this.toast(n + ' board added — scanning') })),
+      boardDraft: s.boardDraft,
+      onBoardDraft: (e) => this.setState({ boardDraft:e.target.value }),
+      onAddBoard: () => { this.setState({ boardDraft:'', emptyQueue:false }); this.toast('Board added — 10 postings found'); },
+
+      jumpValue: s.jump, onJump: (e) => this.jumpTo(e.target.value),
+
+      job, jdBlocks: this.buildJd(), jdWordCount: 412,
+      marksLabel: s.marks ? 'hide matches' : 'show matches',
+      onToggleMarks: () => this.setState(st => ({ marks: !st.marks })),
+      tabIsJd: s.tab === 'jd', tabIsQ: s.tab === 'q',
+      onTabJd: () => this.setState({ tab:'jd' }), onTabQ: () => this.setState({ tab:'q' }),
+      tabJdStyle: 'flex:1;cursor:pointer;border:0;background:' + (s.tab === 'jd' ? 'var(--color-text);color:var(--color-bg)' : 'transparent;color:var(--color-neutral-700)') + ';font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;padding:8px 10px;text-align:left',
+      tabQStyle: 'flex:1;cursor:pointer;border:0;border-left:1px solid var(--color-divider);background:' + (s.tab === 'q' ? 'var(--color-text);color:var(--color-bg)' : 'transparent;color:var(--color-neutral-700)') + ';font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;padding:8px 10px;text-align:left',
+      answers: this.buildAnswers(),
+
+      diffCounts: {
+        reworded: diff.filter(d => d.kindLabel.indexOf('reworded') === 0 || d.kindLabel.indexOf('reverted') === 0).length,
+        kept: diff.filter(d => d.kindLabel === 'selected, unchanged').length,
+        dropped: diff.filter(d => d.kindLabel.indexOf('dropped') === 0).length
+      },
+      hasFlags: flags.length > 0, flagCount: flags.length,
+      onJumpFlag: () => { const el = document.getElementById(flags[0] && flags[0].anchor); if (el) el.scrollTo ? null : null; if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 140, behavior:'smooth' }); },
+
+      resume: this.buildResume(),
+      pdfLabel: 'Tailored resume — as it will submit',
+      pdfMeta: this.blockedActive() ? 'render blocked' : 'out/' + job.id + '.pdf · 1 page',
+      pdfBlocked: this.blockedActive(), pdfReady: !this.blockedActive(),
+      lastRender: 'Aug 12, 09:41',
+      hasBlockedMetric: this.blockedActive(),
+      onFillMetric: () => { this.setState({ metricFilled:true }); this.toast('payments.throughput_usd = $18M — written to source'); },
+      onDropBlocked: () => { this.setState({ blockedDropped:true }); this.toast('Bullet dropped from this application'); },
+
+      pendingLabel: flags.length ? flags.length + ' flagged claim to resolve' : diff.filter(d => d.kindLabel.indexOf('reworded') === 0).length + ' rewrites reviewed',
+      approveDisabled: this.blockedActive(),
+      onApprove: () => this.approve(),
+      onSkipCurrent: () => this.skip(s.jobId),
+      onBack: () => this.setState({ screen:'queue' }),
+
+      handoffTitle: s.handoffPhase === 'unsupported' ? 'Manual submission' : s.handoffPhase === 'confirm' ? 'Did you submit it?' : s.handoffPhase === 'done' ? 'Submitted' : 'Handing off to your browser',
+      handoffWaiting: s.handoffPhase === 'waiting', handoffConfirm: s.handoffPhase === 'confirm',
+      handoffDone: s.handoffPhase === 'done', handoffUnsupported: s.handoffPhase === 'unsupported',
+      handoffSteps: [
+        { label:'Rendered tailored PDF', detail:'out/' + job.id + '.pdf', done:true },
+        { label:'Opened ' + job.source + ' application form', detail:'new window', done:true },
+        { label:'Filled 9 of 9 fields, attached PDF', detail:'answers included', done:true },
+        { label:'You review and click submit', detail:'in that window', done:false }
+      ].map(h => ({
+        label:h.label, detail:h.detail, mark: h.done ? '✓' : '›',
+        markStyle:'font-family:var(--font-heading);font-weight:800;font-size:14px;text-align:center;color:' + (h.done ? 'var(--color-text)' : 'var(--color-accent)') + (h.done ? '' : ';animation:tk-blink 1.1s infinite'),
+        labelStyle:'font-size:13.5px;font-weight:' + (h.done ? '400' : '600')
+      })),
+      onReopen: () => this.toast('Reopened the ' + job.source + ' window'),
+      onAskConfirm: () => this.setState({ handoffPhase:'confirm' }),
+      onSubmitted: () => { this.setStatus(s.jobId, 'Submitted'); this.setState({ handoffPhase:'done', submittedAt:'Aug 12, 09:44' }); },
+      onBailed: () => { this.toast('Left as approved — pick it up later'); this.setState({ screen:'queue' }); },
+      submittedAt: s.submittedAt,
+      nextLabel: counts.tailored + ' tailored applications are waiting for review.',
+      onNextJob: () => { const next = JOBS.find(j => s.status[j.id] === 'Tailored'); if (next) this.openJob(next.id); else this.setState({ screen:'queue' }); },
+      onReveal: () => this.toast('Revealed out/emurgo-fullstack-defi.pdf'),
+      onCopyAnswers: () => this.toast('Answers copied to clipboard'),
+
+      showFabrication: s.fabrication,
+      fabJob: 'Blockdaemon / Senior Protocol Engineer',
+      fabBullet: 'Maintained a Cardano validator client running across 4,000+ staking nodes, cutting block propagation latency by 35%.',
+      onRerun: () => { this.setState({ fabrication:false }); this.startTailor(s.tailorJobId || 'blockdaemon'); },
+      onOpenSource: () => this.toast('Opened resume.base.yaml at line 118'),
+      onDismissFab: () => this.setState({ fabrication:false, screen:'queue' }),
+
+      showToast: !!s.toast, toast: s.toast,
+      onUndo: () => { if (s.undo) s.undo(); this.setState({ toast:null, undo:null }); },
+
+      tailorJob, tailorSteps, tailorElapsed: s.tailorElapsed, tailorEta: 22,
+      tailorBarStyle: 'height:100%;width:' + pct + '%;background:var(--color-accent);transition:width .4s ease',
+      tailorMatches: MATCHES.slice(0, Math.max(0, stepDone - 1)),
+      onCancelTailor: () => { clearInterval(this._tick); clearTimeout(this._step); this.setState({ screen:'queue' }); }
+    };
+  }
+}
+
+</script>
+</body>
+</html>

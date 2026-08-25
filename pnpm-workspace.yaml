@@ -1,0 +1,13 @@
+allowBuilds:
+  # Standing allowance for the one native dependency, inert at the pinned
+  # 13.0.3: that version ships prebuilt bindings in the tarball
+  # (prebuilds/darwin-arm64.node and friends) and declares no install or
+  # postinstall script, so nothing is compiled and `require("better-sqlite3")`
+  # works with this entry set either way. Kept so that a future version or a
+  # platform with no prebuild cannot turn `pnpm install` into a prompt.
+  better-sqlite3: true
+  # Real and required: esbuild's postinstall fetches its platform binary, and
+  # drizzle-kit bundles through esbuild.
+  esbuild: true
+  sharp: false
+  unrs-resolver: false

@@ -1,0 +1,91 @@
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when its first story starts (via build's sprint sync)
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates the next story after the previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; the status view surfaces open ones
+generated: 08-14-2026 20:43
+last_updated: 08-25-2026
+project: tailor
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+development_status:
+  epic-1: in-progress
+  1-1-run-the-app-on-the-pinned-stack: review
+  1-2-port-the-modernist-design-system: backlog
+  1-3-see-the-app-s-global-chrome: backlog
+  1-4-get-one-legible-error-shape-from-every-endpoint: backlog
+  1-5-start-the-app-on-a-clean-machine-and-have-it-set-itself-up: backlog
+  1-6-read-the-canonical-resume-through-a-single-gateway: backlog
+  1-7-see-the-canonical-resume-rendered-as-a-document: backlog
+  1-8-have-a-render-blocked-when-a-claim-is-incomplete: backlog
+  1-9-export-the-resume-as-a-pdf-with-a-verified-text-layer: backlog
+  1-10-develop-the-ui-against-mock-data-without-touching-canon: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-add-a-job-board-so-the-app-knows-where-to-look: backlog
+  2-2-scan-a-greenhouse-board-and-have-its-postings-stored: backlog
+  2-3-scan-lever-ashby-and-workable-boards: backlog
+  2-4-see-how-well-each-posting-matches-my-experience: backlog
+  2-5-read-the-queue-as-a-dense-table: backlog
+  2-6-narrow-and-reorder-the-queue: backlog
+  2-7-triage-the-queue-with-the-keyboard-alone: backlog
+  2-8-open-a-posting-by-its-state: backlog
+  2-9-skip-postings-and-undo-it: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-call-the-model-through-one-isolated-entry-point: backlog
+  3-2-start-a-tailoring-run-and-get-an-id-immediately: backlog
+  3-3-watch-a-run-move-through-its-six-real-steps: backlog
+  3-4-have-a-malformed-response-reported-as-a-failure-not-a-lie: backlog
+  3-5-have-a-run-that-invents-an-experience-write-nothing-at-all: backlog
+  3-6-see-exactly-which-claim-had-no-source: backlog
+  3-7-cancel-a-run-in-flight: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-build-the-diff-set-from-the-model-s-own-mapping: backlog
+  4-2-open-a-posting-for-review: backlog
+  4-3-read-each-proposed-change-against-its-source: backlog
+  4-4-edit-a-proposed-bullet-and-watch-the-resume-update: backlog
+  4-5-revert-a-rewrite-or-bring-back-a-dropped-bullet: backlog
+  4-6-be-warned-when-a-rewrite-claims-more-than-my-source: backlog
+  4-7-see-which-requirements-the-tailoring-matched: backlog
+  4-8-review-and-edit-the-screening-answers: backlog
+  4-9-have-approval-blocked-while-a-claim-is-incomplete: backlog
+  4-10-approve-the-application: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-have-my-application-opened-in-a-browser-filled-and-attached: backlog
+  5-2-confirm-whether-i-actually-submitted-it: backlog
+  5-3-fill-an-unsupported-form-by-hand-without-losing-the-work: backlog
+  5-4-move-straight-to-the-next-tailored-posting: backlog
+  epic-5-retrospective: optional
