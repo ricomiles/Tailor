@@ -26,8 +26,9 @@ target — by design.
 | `pnpm start` | Serves a production build (after `pnpm build`). |
 | `pnpm lint` | ESLint, including the core dependency rule. |
 | `pnpm typecheck` | `tsc --noEmit` on TypeScript 5.9.3. |
-| `pnpm build` | `lint` → `typecheck` → `verify:boundaries` → `next build`. Next 16 has no `next lint`, so the build chains every check explicitly. |
+| `pnpm build` | `clean:probes` → `lint` → `typecheck` → `verify:boundaries` → `next build`. Next 16 has no `next lint`, so the build chains every check explicitly. |
 | `pnpm verify:boundaries` | Proves the core dependency rule still fires on every violation class. |
+| `pnpm clean:probes` | Clears a boundary probe left behind by a killed `verify:boundaries` run. |
 
 ## Layout
 
@@ -40,13 +41,27 @@ data/         # gitignored — canon, SQLite, logs
 out/          # gitignored — rendered PDFs
 ```
 
-**No file under `core/` may import outward** — not from `app/`, `adapters/`,
-`components/`, `next/*`, `drizzle-orm`, `playwright`, or any Node built-in. The
-core receives capability only through the port interfaces it defines. Deferred
-loading — `import()`, `require()` — is banned outright under `core/`, because
-the static import rules cannot see through it. All of this is enforced as an
-ESLint **error** in `eslint.config.mjs` and runs inside `pnpm build`, so a
-violation fails the build naming the offending import.
+**No file under `core/` may reference anything outside `core/`** — not `app/`,
+`adapters/`, `components/`, `scripts/`, `tools/`, a root-level module, `next/*`,
+`drizzle-orm`, `better-sqlite3`, `playwright`, the UI/state runtime (`react`,
+`react-dom`, `zustand`), or any Node built-in. `zod` is deliberately allowed:
+the architecture requires every cross-unit type declared once in the core as a
+named schema. The core receives capability only through the port interfaces it
+defines. Deferred loading is banned outright under `core/` — `import()`,
+`require()`, `require.resolve()`, member forms like `module.require`, a bare
+`require` passed around as a value, `import.meta.resolve`, and
+`process.getBuiltinModule` — because the static import rules cannot see through
+any of them.
+
+Re-exports count: `export * from "../../adapters/db/x"` is an escape exactly as
+much as the equivalent `import`, and is caught by the same rule.
+
+All of this is enforced as an ESLint **error** in `eslint.config.mjs` and runs
+inside `pnpm build`, so a violation fails the build naming the offending
+reference. One caveat worth knowing: `pnpm typecheck` is a load-bearing link in
+that chain, not a formality. It is what catches a type-level escape ESLint
+cannot see, which is why `verify:boundaries` asserts the build script still
+chains it.
 
 `tools/boundary-fixtures/` holds deliberately-violating files. They are
 excluded from the app's lint glob and from `tsconfig.json`;

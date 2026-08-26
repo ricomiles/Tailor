@@ -46,13 +46,13 @@ importers:
         specifier: 0.31.10
         version: 0.31.10
       eslint:
-        specifier: ^9
+        specifier: 9.39.5
         version: 9.39.5(supports-color@7.2.0)
       eslint-config-next:
         specifier: 16.3.0
         version: 16.3.0(@typescript-eslint/parser@8.67.0(eslint@9.39.5(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3))(eslint@9.39.5(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
       eslint-plugin-boundaries:
-        specifier: ^5
+        specifier: 5.4.0
         version: 5.4.0(@typescript-eslint/parser@8.67.0(eslint@9.39.5(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(supports-color@7.2.0))(supports-color@7.2.0)
       typescript:
         specifier: 5.9.3

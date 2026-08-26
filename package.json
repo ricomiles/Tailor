@@ -11,8 +11,9 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "clean:probes": "node scripts/clean-probes.mjs",
     "verify:boundaries": "node scripts/verify-boundaries.mjs",
-    "build": "pnpm lint && pnpm typecheck && pnpm verify:boundaries && next build"
+    "build": "pnpm clean:probes && pnpm lint && pnpm typecheck && pnpm verify:boundaries && next build"
   },
   "dependencies": {
     "better-sqlite3": "13.0.3",
@@ -29,9 +30,9 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "0.31.10",
-    "eslint": "^9",
+    "eslint": "9.39.5",
     "eslint-config-next": "16.3.0",
-    "eslint-plugin-boundaries": "^5",
+    "eslint-plugin-boundaries": "5.4.0",
     "typescript": "5.9.3"
   }
 }

@@ -41,6 +41,7 @@ import { ESLint } from "eslint";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -49,6 +50,7 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { RESOLVE_EXTENSIONS } from "../eslint.config.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURES = join(ROOT, "tools", "boundary-fixtures");
@@ -71,21 +73,16 @@ const FIXTURE_EXTENSIONS = [
 ];
 const FIXTURE_GLOB = `tools/boundary-fixtures/**/*.{${FIXTURE_EXTENSIONS.join(",")}}`;
 
-/** Mirrors `import/resolver` in eslint.config.mjs. */
-const RESOLVE_EXTENSIONS = [
-  ".ts",
-  ".tsx",
-  ".mts",
-  ".cts",
-  ".js",
-  ".jsx",
-  ".mjs",
-  ".cjs",
-  ".json",
-];
-
-/** Rules that decide by resolving the specifier to a file on disk. */
-const PATH_RESOLVING_RULES = new Set(["boundaries/element-types"]);
+/**
+ * Rules that decide by resolving the specifier to a file on disk.
+ * `RESOLVE_EXTENSIONS` is imported from the shipping config rather than
+ * restated: two hand-maintained copies drifted in precedence once already,
+ * which let this script vouch for a resolution ESLint never performed.
+ */
+const PATH_RESOLVING_RULES = new Set([
+  "boundaries/element-types",
+  "tailor/no-outward-relative-reference",
+]);
 
 /**
  * Every rule that is allowed to satisfy an `EXPECT: violation`. Without this,
@@ -97,6 +94,14 @@ const BOUNDARY_RULES = new Set([
   "no-restricted-imports",
   "tailor/no-deferred-module-loading",
 ]);
+
+/** Rules that must be loaded for a file under core/, or nothing is enforced. */
+const REQUIRED_CORE_RULES = [
+  "boundaries/element-types",
+  "no-restricted-imports",
+  "tailor/no-outward-relative-reference",
+  "tailor/no-deferred-module-loading",
+];
 
 /**
  * Every violation class, as the specifier that must be rejected somewhere in
@@ -117,6 +122,19 @@ const REQUIRED_ROWS = {
   "Forbidden package (browser)": "playwright",
   "Deferred escape via import()": "node:child_process",
   "Deferred escape via require()": "drizzle-kit",
+  "Deferred escape via require.resolve()": "better-sqlite3",
+  "Deferred escape with a non-literal specifier": "<non-literal>",
+  "Deferred escape via a `require` value reference": "<require-as-value>",
+  "Deferred escape via process.getBuiltinModule()": "node:os",
+  "Deferred escape via import.meta.resolve()": "node:url",
+  "Re-export escape (export … from)": "../../adapters/db/reexport-target",
+  "Re-export escape (export * from)": "../../adapters/root-repository",
+  "Relative escape whose target does not resolve": "../../adapters/db/not-on-disk",
+  "Relative escape into an unclassified directory":
+    "../../../../scripts/verify-boundaries.mjs",
+  "Alias escape into an unclassified directory": "@/scripts/verify-boundaries.mjs",
+  "Forbidden package (UI runtime)": "react",
+  "Forbidden package (client state)": "zustand",
 };
 
 const failures = [];
@@ -130,18 +148,61 @@ const fail = (message) => failures.push(message);
 
 const PROBE_DIR = join(ROOT, "core", "canon");
 const PROBE_PREFIX = "__boundary-probe.";
-const probePath = join(PROBE_DIR, `${PROBE_PREFIX}${process.pid}.ts`);
 
+/**
+ * One probe per enforcement mechanism. A single alias-form probe only ever
+ * proved `no-restricted-imports`; the path-resolving and deferred rules could
+ * both have gone dead with this check still green.
+ */
+const PROBES = [
+  {
+    mechanism: "no-restricted-imports (alias form)",
+    specifier: "@/adapters/db/repository",
+    body: (specifier) =>
+      `import { repository } from "${specifier}";\n\nexport const leaked = repository;\n`,
+  },
+  {
+    mechanism: "tailor/no-outward-relative-reference (path form)",
+    specifier: "../../adapters/db/repository",
+    body: (specifier) => `export * from "${specifier}";\n`,
+  },
+  {
+    mechanism: "tailor/no-deferred-module-loading (deferred form)",
+    specifier: "node:os",
+    body: (specifier) =>
+      `export const os = process.getBuiltinModule("${specifier}");\n`,
+  },
+].map((probe, index) => ({
+  ...probe,
+  path: join(PROBE_DIR, `${PROBE_PREFIX}${process.pid}.${index}.ts`),
+}));
+
+/**
+ * Only probes belonging to processes that are gone. Deleting every probe
+ * regardless of owner meant two concurrent runs destroyed each other's, and
+ * the survivor reported the guardrail broken.
+ */
 function removeStaleProbes() {
   if (!existsSync(PROBE_DIR)) return;
   for (const entry of readdirSync(PROBE_DIR)) {
-    if (entry.startsWith(PROBE_PREFIX)) {
+    if (!entry.startsWith(PROBE_PREFIX)) continue;
+    const pid = Number.parseInt(entry.slice(PROBE_PREFIX.length), 10);
+    if (Number.isNaN(pid)) {
+      rmSync(join(PROBE_DIR, entry), { force: true });
+      continue;
+    }
+    if (pid === process.pid) continue;
+    try {
+      process.kill(pid, 0); // Owner still alive — leave its probe alone.
+    } catch {
       rmSync(join(PROBE_DIR, entry), { force: true });
     }
   }
 }
 
-const cleanUpProbe = () => rmSync(probePath, { force: true });
+const cleanUpProbe = () => {
+  for (const probe of PROBES) rmSync(probe.path, { force: true });
+};
 process.on("exit", cleanUpProbe);
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(signal, () => {
@@ -275,9 +336,12 @@ for (const file of fixtureFiles) {
     }
 
     case "violation": {
+      // The quoted form, not a bare substring: the bare-built-in row asserts
+      // on "path", which any message mentioning a path would satisfy — letting
+      // an unrelated rule vouch for a dead boundary rule.
+      const quoted = `'${expectation.source}'`;
       const naming = errors.filter(
-        (m) =>
-          BOUNDARY_RULES.has(m.ruleId) && m.message.includes(expectation.source),
+        (m) => BOUNDARY_RULES.has(m.ruleId) && m.message.includes(quoted),
       );
       if (errors.length === 0) {
         fail(
@@ -285,7 +349,7 @@ for (const file of fixtureFiles) {
         );
       } else if (naming.length === 0) {
         fail(
-          `${rel}: no boundary rule named '${expectation.source}'. Errors seen: ${errors
+          `${rel}: no boundary rule named ${quoted}. Errors seen: ${errors
             .map(describe)
             .join("; ")}`,
         );
@@ -320,18 +384,64 @@ for (const [row, source] of Object.entries(REQUIRED_ROWS)) {
 }
 
 // ---------------------------------------------------------------------------
+// 2b. The rules are actually loaded for core files — and deliberately not for
+// the rest. A fixture that lints clean because no rule ran proves nothing, and
+// `adapters/db/legal-inward.ts` was exactly that: the boundary config is
+// scoped to core files, so its "clean" result never demonstrated that an
+// inward import is permitted.
+// ---------------------------------------------------------------------------
+
+const coreCleanFixture = join(FIXTURES, "core", "canon", "clean.ts");
+const inwardFixture = join(FIXTURES, "adapters", "db", "legal-inward.ts");
+
+if (existsSync(coreCleanFixture)) {
+  const config = await eslint.calculateConfigForFile(coreCleanFixture);
+  for (const rule of REQUIRED_CORE_RULES) {
+    const entry = config.rules?.[rule];
+    const severity = Array.isArray(entry) ? entry[0] : entry;
+    if (severity !== 2 && severity !== "error") {
+      fail(
+        `${relative(ROOT, coreCleanFixture)}: '${rule}' is not loaded as an error for core files ` +
+          `(got ${JSON.stringify(entry ?? null)}). Every clean-fixture pass under core/ would be vacuous.`,
+      );
+    }
+  }
+} else {
+  fail(
+    `${relative(ROOT, coreCleanFixture)} is missing — nothing proves the core rules load at all.`,
+  );
+}
+
+if (existsSync(inwardFixture)) {
+  const config = await eslint.calculateConfigForFile(inwardFixture);
+  const loaded = REQUIRED_CORE_RULES.filter((rule) => config.rules?.[rule]);
+  if (loaded.length > 0) {
+    fail(
+      `${relative(ROOT, inwardFixture)}: the core boundary rules (${loaded.join(", ")}) are loaded ` +
+        "for a non-core file. The config is scoped to core/ on purpose; if that scope widens, this " +
+        "fixture's expectation needs rewriting rather than silently passing.",
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 3. A violation in the real core/ tree blocks the build.
 // ---------------------------------------------------------------------------
 
-const probeSource = "@/adapters/db/repository";
 try {
-  writeFileSync(
-    probePath,
-    "// Temporary probe written by scripts/verify-boundaries.mjs. Deleted on exit.\n" +
-      `import { repository } from "${probeSource}";\n\n` +
-      "export const leaked = repository;\n",
-    { flag: "wx" },
-  );
+  // `core/canon/` is seeded with a .gitkeep, but a rename or a dropped seed
+  // would otherwise surface as an ENOENT from writeFileSync rather than as a
+  // guardrail failure.
+  mkdirSync(PROBE_DIR, { recursive: true });
+  for (const probe of PROBES) {
+    writeFileSync(
+      probe.path,
+      "// Temporary probe written by scripts/verify-boundaries.mjs. Deleted on exit.\n" +
+        `// Proves: ${probe.mechanism}\n` +
+        probe.body(probe.specifier),
+      { flag: "wx" },
+    );
+  }
 
   const lint = spawnSync("pnpm", ["lint"], {
     cwd: ROOT,
@@ -354,15 +464,21 @@ try {
     );
   } else if (lint.status === 0) {
     fail(
-      "`pnpm lint` exited 0 with a violating file in core/ — `pnpm build` would not be blocked.",
+      "`pnpm lint` exited 0 with violating files in core/ — `pnpm build` would not be blocked.",
     );
-  } else if (!output.includes(probeSource)) {
-    fail(
-      `\`pnpm lint\` failed but never named '${probeSource}'. Output:\n${output}`,
-    );
+  } else {
+    // Non-zero is not enough: each mechanism must be the reason for itself.
+    for (const probe of PROBES) {
+      if (!output.includes(probe.specifier)) {
+        fail(
+          `\`pnpm lint\` failed but never named '${probe.specifier}', so ${probe.mechanism} ` +
+            `is unproven against the real core/ tree. Output:\n${output}`,
+        );
+      }
+    }
   }
 } catch (error) {
-  fail(`Could not write the build-blocking probe at ${relative(ROOT, probePath)}: ${error.message}`);
+  fail(`Could not write the build-blocking probes into ${relative(ROOT, PROBE_DIR)}: ${error.message}`);
 } finally {
   cleanUpProbe();
 }
@@ -371,16 +487,19 @@ try {
 // `pnpm build` fails, which holds only while `build` still chains the lint step.
 const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 const buildScript = pkg.scripts?.build ?? "";
-if (!/\bpnpm\s+lint\b/.test(buildScript)) {
+// Matched as one `&&`-chained sequence, not as four independent substrings:
+// `pnpm lint || true` contains "pnpm lint" and blocks nothing, and a missing
+// `pnpm typecheck` would drop the only check that catches what lint cannot.
+const EXPECTED_BUILD_CHAIN =
+  /^\s*pnpm\s+clean:probes\s*&&\s*pnpm\s+lint\s*&&\s*pnpm\s+typecheck\s*&&\s*pnpm\s+verify:boundaries\s*&&\s*next\s+build\s*$/;
+if (!EXPECTED_BUILD_CHAIN.test(buildScript)) {
   fail(
-    `package.json's build script does not run \`pnpm lint\` (it is "${buildScript}"). ` +
-      "The lint above would fail, but the build would not.",
-  );
-}
-if (!/\bpnpm\s+verify:boundaries\b/.test(buildScript)) {
-  fail(
-    `package.json's build script does not run \`pnpm verify:boundaries\` (it is "${buildScript}"). ` +
-      "Nothing else runs these fixtures, so the guardrail could rot untested.",
+    `package.json's build script is "${buildScript}", which is not the required chain ` +
+      "`pnpm clean:probes && pnpm lint && pnpm typecheck && pnpm verify:boundaries && next build`. " +
+      "Each link is load-bearing: clean:probes clears a probe left by a killed run (lint runs " +
+      "before the step that would otherwise clean it), lint enforces AD-1, typecheck is the only " +
+      "check that sees a type-level escape, and verify:boundaries is the only thing exercising " +
+      "these fixtures.",
   );
 }
 
@@ -396,5 +515,6 @@ if (failures.length > 0) {
 console.log(
   `Core boundary guardrail intact: ${fixtureFiles.length} fixtures, ` +
     `${Object.keys(REQUIRED_ROWS).length} violation classes, ` +
+    `${PROBES.length} mechanisms proven against the real core/ tree, ` +
     "and a violation in core/ blocks the build.",
 );

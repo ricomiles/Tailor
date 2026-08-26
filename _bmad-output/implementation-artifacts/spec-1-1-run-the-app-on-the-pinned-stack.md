@@ -3,7 +3,7 @@ title: 'Story 1.1 — Run the app on the pinned stack'
 type: 'chore'
 created: '2026-08-19'
 status: 'done'
-baseline_commit: 'NO_VCS' # repository is initialized by this story's first task
+baseline_commit: '80ab029' # renegotiated 2026-08-26: work is committed; later stories diff from here
 review_loop_iteration: 0
 context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 ---
@@ -35,7 +35,7 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 - No Docker, CI, deployment target, or second process.
 - No business logic, tables, migrations, design tokens, canon gateway, or routes beyond the scaffold's — those are Stories 1.2–1.10.
 - Do not rely on `next lint`; it does not exist in Next 16.
-- Do not commit. Initialize the repository only.
+- Commit the work and push it. (Renegotiated 2026-08-26; this previously read "Do not commit. Initialize the repository only.")
 
 ## I/O & Edge-Case Matrix
 
@@ -57,7 +57,7 @@ Each row is a fixture the guardrail test must exercise.
 
 Greenfield — everything is created here except the read-only sources.
 
-- `package.json` -- exact pins, `engines.node`, `packageManager`, and the `build` script chaining lint + type-check + `next build`.
+- `package.json` -- exact pins, `engines.node`, `packageManager`, and the `build` script chaining `clean:probes` + lint + type-check + `verify:boundaries` + `next build`. (Corrected 2026-08-26: this and Design Notes previously omitted `verify:boundaries`, contradicting the Spec Change Log.)
 - `.nvmrc` (`24.19.0`), `.gitignore` (must ignore `/data` and `/out` — both hold irreplaceable state).
 - `eslint.config.mjs` -- `eslint-config-next` plus the core dependency rule.
 - `tsconfig.json` -- `@/*` alias; excludes the boundary fixtures.
@@ -86,6 +86,51 @@ Greenfield — everything is created here except the read-only sources.
 - Given the repository, when I list the tree, then `core/`, `adapters/`, `app/`, `components/` exist and `core/` holds `ports`, `canon`, `pipeline`, `validation`, `diff`, `scoring`, `gates`.
 - Given any matrix violation, when I run `pnpm build`, then it fails and the output names the offending import.
 - Given the project, when I run `pnpm typecheck`, then it completes on TypeScript 5.9.3 with no experimental compiler flag.
+
+### Review Findings
+
+_Adversarial code review, 2026-08-26. Four layers (blind-hunter, edge-case-hunter, verification-gap, acceptance-auditor). Every claim below was re-verified against live lint/tsc runs before rating._
+
+**Decisions resolved (2026-08-26)**
+
+- [x] [Review][Decision] Which packages `core/` may import — **resolved: only what is necessary.** `zod` stays (the epic contract requires cross-unit types declared in the core as named schemas). `react`, `react-dom` and `zustand` are banned. Becomes a patch against `forbiddenPackages`.
+- [x] [Review][Decision] Pin the lint toolchain — **resolved: yes.** `eslint` and `eslint-plugin-boundaries` pin to `9.39.5` and `5.4.0`, the versions already resolved, so behaviour is unchanged. Note `9.39.5` is the newest 9.x and the v9 line is on the `maintenance` tag; the ESLint 10 migration is logged as deferred work, not done here.
+- [x] [Review][Decision] The commit constraint — **resolved: renegotiated.** The frozen "Do not commit" constraint is replaced with one that requires committing and pushing. `baseline_commit` updates from `NO_VCS` to `80ab029` so later stories diff from the right point.
+
+**Patches** — all applied 2026-08-26; `pnpm build` green, guardrail at 36 fixtures / 26 classes / 3 mechanisms.
+
+- [x] [Review][Patch] `forbiddenPackages` does not ban the UI/state runtime; `core/` may import `react`, `react-dom` and `zustand` [eslint.config.mjs:59]
+- [x] [Review][Patch] Pin `eslint` to `9.39.5` and `eslint-plugin-boundaries` to `5.4.0` — the guardrail's own dependencies are the only floating ranges [package.json:32]
+- [x] [Review][Patch] Replace the frozen "Do not commit" constraint with a commit-and-push requirement, and set `baseline_commit` to `80ab029` [spec-1-1:11]
+- [x] [Review][Patch] A relative re-export escapes AD-1 entirely — `pnpm build` exits 0 [eslint.config.mjs:172]
+- [x] [Review][Patch] Deferred-loading ban misses `process.getBuiltinModule`, `module.require`, aliased `require`, and `import.meta.resolve` [eslint.config.mjs:119]
+- [x] [Review][Patch] `default: "allow"` lets `core/` import any unclassified path (`scripts/`, `tools/`, root files) [eslint.config.mjs:175]
+- [x] [Review][Patch] No fixture and no `REQUIRED_ROWS` entry for the `require.resolve()` arm [scripts/verify-boundaries.mjs:105]
+- [x] [Review][Patch] No fixture and no `REQUIRED_ROWS` entry for the non-literal `import(spec)` branch [scripts/verify-boundaries.mjs:105]
+- [x] [Review][Patch] Build-chain assertion omits `pnpm typecheck` and `next build` [scripts/verify-boundaries.mjs:374]
+- [x] [Review][Patch] Build-chain assertion is substring-based; `pnpm lint || true` would satisfy it [scripts/verify-boundaries.mjs:374]
+- [x] [Review][Patch] The in-tree probe exercises only `no-restricted-imports`, never the path-resolving or deferred rules [scripts/verify-boundaries.mjs:326]
+- [x] [Review][Patch] The "Legal inward import" row is vacuous — the boundary config is scoped to `CORE_FILES`, so no rule loads for that fixture [scripts/verify-boundaries.mjs:105]
+- [x] [Review][Patch] `removeStaleProbes()` deletes every probe regardless of PID, so concurrent runs destroy each other's [scripts/verify-boundaries.mjs:135]
+- [x] [Review][Patch] A probe surviving SIGKILL wedges `pnpm build`: `lint` runs before the step that cleans it [scripts/verify-boundaries.mjs:135]
+- [x] [Review][Patch] `RESOLVE_EXTENSIONS` precedence differs from the config it claims to mirror, and nothing asserts they agree [scripts/verify-boundaries.mjs:75]
+- [x] [Review][Patch] `tsconfig.include` and `CORE_FILES` cover different sets — `core/*.cts|.js|.jsx` is linted but never type-checked [tsconfig.json:25]
+- [x] [Review][Patch] Fixture matching uses bare `message.includes(source)`; the `path` row can be satisfied by any path-mentioning message [scripts/verify-boundaries.mjs:280]
+- [x] [Review][Patch] Spec contradicts itself on the `build` script — Code Map and Design Notes omit `verify:boundaries`, only the Change Log has it [spec-1-1:60,124]
+- [x] [Review][Patch] README credits ESLint for naming an unresolvable relative escape; TypeScript is what actually catches it [README.md]
+- [x] [Review][Patch] `nodeBuiltins` underscore filter runs after the `node:` mapping, so `node:_http_*` survives — contradicts its own comment [eslint.config.mjs:56]
+- [x] [Review][Patch] Probe `writeFileSync` throws ENOENT if `core/canon/` is absent, instead of failing with a guardrail message [scripts/verify-boundaries.mjs:328]
+
+**Deferred**
+
+- [x] [Review][Defer] `resolvesOnDisk` scans with a regex, so a commented-out or string-literal specifier can trigger a false failure [scripts/verify-boundaries.mjs:170] — deferred, pre-existing
+- [x] [Review][Defer] SIGHUP exits 143 rather than 129, and SIGQUIT is unhandled [scripts/verify-boundaries.mjs:146] — deferred, pre-existing
+- [x] [Review][Defer] `FIXTURE_EXTENSIONS` declares eight extensions; only `.ts` and `.mts` are exercised [scripts/verify-boundaries.mjs:62] — deferred, pre-existing
+- [x] [Review][Defer] `next-env.d.ts` build-ordering hazard: `tsc` runs before the step that regenerates `.next/` types [tsconfig.json:26] — deferred, pre-existing
+- [x] [Review][Defer] README documents `out/` for rendered PDFs, colliding with Next's static-export directory [README.md] — deferred, pre-existing
+- [x] [Review][Defer] The `tailor` plugin object carries no `meta: { name, version }`, which ESLint 9 uses for config inspection [eslint.config.mjs:144] — deferred, pre-existing
+- [x] [Review][Defer] README's layout tree omits `scripts/` and `tools/` although the prose below it discusses them [README.md] — deferred, pre-existing
+
 
 ## Spec Change Log
 
@@ -120,10 +165,13 @@ Greenfield — everything is created here except the read-only sources.
   "dev": "next dev",
   "lint": "eslint .",
   "typecheck": "tsc --noEmit",
+  "clean:probes": "node scripts/clean-probes.mjs",
   "verify:boundaries": "node scripts/verify-boundaries.mjs",
-  "build": "pnpm lint && pnpm typecheck && next build"
+  "build": "pnpm clean:probes && pnpm lint && pnpm typecheck && pnpm verify:boundaries && next build"
 }
 ```
+
+(Corrected 2026-08-26. This block previously read `pnpm lint && pnpm typecheck && next build`, which contradicted the Spec Change Log and would have dropped the guardrail from the build for anyone following it.)
 
 Prefer a path-resolving mechanism (`eslint-plugin-boundaries`, or `import/no-restricted-paths`) over bare `no-restricted-imports` patterns: string matching on specifiers misses the relative escape, which is exactly the case a developer hits by reflex. Verify the chosen mechanism by running it against the fixtures, not by reading its docs.
 
