@@ -1,0 +1,74 @@
+/* App chrome — not a design-system component, and deliberately not in
+   app/globals.css, which Story 1.2 froze as a diffable port of its source.
+
+   Colors resolve through tokens. The metrics do not: the design specifies a
+   39px bar, 20/14px gaps and an 18px divider, none of which sit on the
+   --space-* scale (4/8/12/16/24/32). The design source governs visuals, so
+   those ship as literals rather than being rounded onto the scale.
+
+   Known deviation from WCAG AA, escalated rather than patched: .boards is
+   10px --color-neutral-600 on --color-bg, about 3.9:1 against the 4.5:1
+   minimum. The token and the size both come from the design source, which
+   this story gives authority over visuals, so the fix belongs there. */
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  /* Explicit height, not padding-derived. Epic 2 pins its action bar at
+     top: 39px, so this must not drift with line-height — the prototype's own
+     9px padding computes to ~44.8px under the inherited 1.55. The global
+     box-sizing: border-box keeps the 2px rule inside the 39px. */
+  height: 39px;
+  line-height: 1;
+  padding: 0 var(--space-4);
+  border-bottom: 2px solid var(--color-divider);
+  background: var(--color-bg);
+  /* The height is a contract, so nothing inside may grow it. Below the
+     design's desktop width the labels run out of room; clipping keeps the bar
+     39px tall instead of letting wrapped text spill over the page beneath it,
+     which a sticky element would drag down every screen. */
+  overflow: hidden;
+}
+
+.brand {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 16px;
+  letter-spacing: -0.02em;
+}
+
+.divider {
+  width: 1px;
+  height: 18px;
+  background: var(--color-divider);
+  /* Flex would otherwise shrink the 1px rule to nothing once the bar is
+     tight. */
+  flex: none;
+}
+
+.counts {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-neutral-700);
+  min-width: 0;
+}
+
+.counts span {
+  white-space: nowrap;
+}
+
+.boards {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+  white-space: nowrap;
+}
