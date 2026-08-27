@@ -52,3 +52,8 @@ __boundary-probe.*
 /.claude/
 /_bmad/
 /BMAD-PLAN.md
+
+# Playwright: browser-run artifacts, regenerated on every `pnpm test:e2e`.
+/test-results
+/playwright-report
+/blob-report

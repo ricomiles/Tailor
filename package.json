@@ -2,8 +2,9 @@
   "name": "tailor",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "packageManager": "pnpm@11.21.0",
   "scripts": {
@@ -11,9 +12,12 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test": "node scripts/run-tests.mjs",
+    "test:e2e": "playwright test",
     "clean:probes": "node scripts/clean-probes.mjs",
     "verify:boundaries": "node scripts/verify-boundaries.mjs",
-    "build": "pnpm clean:probes && pnpm lint && pnpm typecheck && pnpm verify:boundaries && next build"
+    "build": "pnpm clean:probes && pnpm lint && pnpm typecheck && pnpm test && pnpm verify:boundaries && next build",
+    "verify": "pnpm build && pnpm test:e2e"
   },
   "dependencies": {
     "better-sqlite3": "13.0.3",
@@ -26,6 +30,7 @@
     "zustand": "5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",

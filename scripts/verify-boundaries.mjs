@@ -487,19 +487,19 @@ try {
 // `pnpm build` fails, which holds only while `build` still chains the lint step.
 const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 const buildScript = pkg.scripts?.build ?? "";
-// Matched as one `&&`-chained sequence, not as four independent substrings:
+// Matched as one `&&`-chained sequence, not as independent substrings:
 // `pnpm lint || true` contains "pnpm lint" and blocks nothing, and a missing
 // `pnpm typecheck` would drop the only check that catches what lint cannot.
 const EXPECTED_BUILD_CHAIN =
-  /^\s*pnpm\s+clean:probes\s*&&\s*pnpm\s+lint\s*&&\s*pnpm\s+typecheck\s*&&\s*pnpm\s+verify:boundaries\s*&&\s*next\s+build\s*$/;
+  /^\s*pnpm\s+clean:probes\s*&&\s*pnpm\s+lint\s*&&\s*pnpm\s+typecheck\s*&&\s*pnpm\s+test\s*&&\s*pnpm\s+verify:boundaries\s*&&\s*next\s+build\s*$/;
 if (!EXPECTED_BUILD_CHAIN.test(buildScript)) {
   fail(
     `package.json's build script is "${buildScript}", which is not the required chain ` +
-      "`pnpm clean:probes && pnpm lint && pnpm typecheck && pnpm verify:boundaries && next build`. " +
+      "`pnpm clean:probes && pnpm lint && pnpm typecheck && pnpm test && pnpm verify:boundaries && next build`. " +
       "Each link is load-bearing: clean:probes clears a probe left by a killed run (lint runs " +
       "before the step that would otherwise clean it), lint enforces AD-1, typecheck is the only " +
-      "check that sees a type-level escape, and verify:boundaries is the only thing exercising " +
-      "these fixtures.",
+      "check that sees a type-level escape, test is the only thing that runs the unit suite at " +
+      "all, and verify:boundaries is the only thing exercising these fixtures.",
   );
 }
 
