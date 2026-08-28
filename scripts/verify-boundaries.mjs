@@ -94,6 +94,8 @@ const BOUNDARY_RULES = new Set([
   ...PATH_RESOLVING_RULES,
   "no-restricted-imports",
   "tailor/no-deferred-module-loading",
+  "tailor/no-http-response-in-core",
+  "tailor/no-http-status-in-core",
 ]);
 
 /** Rules that must be loaded for a file under core/, or nothing is enforced. */
@@ -102,6 +104,8 @@ const REQUIRED_CORE_RULES = [
   "no-restricted-imports",
   "tailor/no-outward-relative-reference",
   "tailor/no-deferred-module-loading",
+  "tailor/no-http-response-in-core",
+  "tailor/no-http-status-in-core",
 ];
 
 /**
@@ -136,6 +140,19 @@ const REQUIRED_ROWS = {
   "Alias escape into an unclassified directory": "@/scripts/verify-boundaries.mjs",
   "Forbidden package (UI runtime)": "react",
   "Forbidden package (client state)": "zustand",
+  // Not an import at all: `Response` is a global, so these classes are the only
+  // thing standing between core/ and an HTTP-shaped error. The sentinel is the
+  // offending construct rather than a specifier, the way the non-literal and
+  // require-as-value rows above are.
+  //
+  // One row per *clause*, not one per rule. Each rule recognises two subjects
+  // under two different conditions, and a single row would let either half be
+  // deleted with nothing going red — which is the precise failure these rows
+  // exist to prevent.
+  "HTTP response built in core": "Response",
+  "HTTP response built in core (Next form)": "NextResponse",
+  "HTTP status carried in core (unconditional name)": "statusCode",
+  "HTTP status carried in core (numeric status literal)": "status",
 };
 
 const failures = [];
@@ -172,6 +189,33 @@ const PROBES = [
     specifier: "node:os",
     body: (specifier) =>
       `export const os = process.getBuiltinModule("${specifier}");\n`,
+  },
+  {
+    // No import to resolve — `Response` is a global. The probe is the only
+    // thing proving this fires against the real core/ tree rather than only
+    // against a fixture the shipping lint glob ignores.
+    mechanism: "tailor/no-http-response-in-core (HTTP response form)",
+    specifier: "Response",
+    body: (specifier) => `export const refused = new ${specifier}("no");\n`,
+  },
+  {
+    mechanism: "tailor/no-http-response-in-core (Next response form)",
+    specifier: "NextResponse",
+    body: (specifier) =>
+      `declare const ${specifier}: { json(body: unknown): unknown };\n` +
+      `export const refused = ${specifier}.json({ code: "internal" });\n`,
+  },
+  {
+    mechanism: "tailor/no-http-status-in-core (unconditional name form)",
+    specifier: "statusCode",
+    body: (specifier) => `export const refused = { ${specifier}: 500 };\n`,
+  },
+  {
+    // The numeric clause is the one with a condition on it, so it is the one
+    // that can be narrowed into a no-op without any fixture noticing.
+    mechanism: "tailor/no-http-status-in-core (numeric status literal form)",
+    specifier: "status",
+    body: (specifier) => `export const refused = { ${specifier}: 404 };\n`,
   },
 ].map((probe, index) => ({
   ...probe,
@@ -407,6 +451,16 @@ if (existsSync(coreCleanFixture)) {
       );
     }
   }
+  // Every rule above is opt-out by comment without this. One
+  // `// eslint-disable-next-line` silences the whole AD-1 family, and deleting
+  // the flag leaves every other check in this script green.
+  if (config.linterOptions?.noInlineConfig !== true) {
+    fail(
+      `${relative(ROOT, coreCleanFixture)}: 'linterOptions.noInlineConfig' is not enabled for core ` +
+        `files (got ${JSON.stringify(config.linterOptions?.noInlineConfig ?? null)}). A single ` +
+        "`// eslint-disable-next-line` would then silence the guardrail with nothing going red.",
+    );
+  }
 } else {
   fail(
     `${relative(ROOT, coreCleanFixture)} is missing — nothing proves the core rules load at all.`,
@@ -468,11 +522,15 @@ try {
       "`pnpm lint` exited 0 with violating files in core/ — `pnpm build` would not be blocked.",
     );
   } else {
-    // Non-zero is not enough: each mechanism must be the reason for itself.
+    // Non-zero is not enough: each mechanism must be the reason for itself, and
+    // the *quoted* form is what proves it. `Response` is a substring of
+    // `NextResponse`, so a bare `includes` would let one probe vouch for the
+    // other's mechanism — the same weakness the per-fixture check above quotes
+    // its sentinel to avoid.
     for (const probe of PROBES) {
-      if (!output.includes(probe.specifier)) {
+      if (!output.includes(`'${probe.specifier}'`)) {
         fail(
-          `\`pnpm lint\` failed but never named '${probe.specifier}', so ${probe.mechanism} ` +
+          `\`pnpm lint\` failed but never named '${probe.specifier}' in quotes, so ${probe.mechanism} ` +
             `is unproven against the real core/ tree. Output:\n${output}`,
         );
       }

@@ -27,8 +27,8 @@ Findings surfaced incidentally by review, not caused by the story that found the
   evidence: `scripts/verify-boundaries.mjs` is the repo's only executable assertion and it covers lint configuration only. Story 1.1 forbids business logic so there is nothing to unit-test yet, but the first story with real logic will need a runner chosen and wired.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1-run-the-app-on-the-pinned-stack.md`
-  summary: `engines.node` and `packageManager` are advisory; nothing enforces them at install time.
-  evidence: Installing on Node 20, or with npm/yarn instead of pnpm, succeeds and fails later cryptically when `better-sqlite3` cannot load. An `.npmrc` with `engine-strict=true` would make the declared floor real, but adding install-time configuration is beyond this story's stated scope.
+  summary: ~~`engines.node`~~ and `packageManager` are advisory; nothing enforces them at install time. **Half closed 2026-08-28.**
+  evidence: Installing on Node 20, or with npm/yarn instead of pnpm, succeeds and fails later cryptically when `better-sqlite3` cannot load. An `.npmrc` with `engine-strict=true` would make the declared floor real, but adding install-time configuration was beyond Story 1.1's stated scope. **The `engines.node` half was closed on 2026-08-28** by Story 1.3's review round 2, which added `.npmrc` with `engine-strict=true` when the floor moved to `>=22.18` for Node's type stripping. The `packageManager` half stands: `engine-strict` does not police which package manager runs, so installing with npm or yarn still succeeds and fails later. Corepack is what enforces that, and nothing requires it.
 
 ## Deferred from: code review of spec-1-1-run-the-app-on-the-pinned-stack (2026-08-26)
 
@@ -207,3 +207,23 @@ Round-2 review, four layers. Items that are either deliberate, already tracked e
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-3-see-the-app-s-global-chrome.md`
   summary: The top bar's boards label ships below WCAG AA at about 3.9:1 — the one contrast defect this story introduces rather than inherits.
   evidence: `.boards` is 10px `var(--color-neutral-600)` (`#7d7979`) on `var(--color-bg)` (`#f3f2f2`) in `components/top-bar/top-bar.module.css:69-72`, roughly 3.9:1 against the 4.5:1 minimum for normal text. Both the size and the token come from the design source, which Story 1.3 gives authority over visuals, so the fix belongs upstream rather than in a local override — `--color-neutral-700` would clear it at about 5.8:1. The story's Design Notes called this "escalated not patched", but the escalation never reached this register; it lived only in a spec paragraph and a CSS comment. Filed here on 2026-08-28 by review round 2 so it sits with the other contrast defects (`--color-divider`, the muted `color-mix` steps, `.btn-primary`) rather than alone. The 11px counts at `--color-neutral-700` already pass.
+
+## Deferred from: build review of spec-1-4-get-one-legible-error-shape-from-every-endpoint (2026-08-28)
+
+Three review layers over the story-1.4 diff. Everything mechanically fixable was patched into the change; these are the findings that are real but belong to another story or another decision.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4-get-one-legible-error-shape-from-every-endpoint.md`
+  summary: The two new HTTP rules are scoped to `core/` only, so an adapter may still build a `Response` or set a status.
+  evidence: Both rules are wired under `CORE_FILES` in the `tailor/core-boundary` block. The story's own doc strings say "errors flow one direction — only `app/api/` formats HTTP", and the epic makes adapters the throwers of typed errors, but `adapters/` is where sqlite, fetch and chromium failures actually originate and nothing there is constrained. This is the concrete, now-demonstrable case of the Story 1.1 deferral above ("Layering is enforced outward-from-core only; no rule constrains `adapters/`, `components/`, or `app/`"). Out of scope here because both the epic's AD-13 and Story 1.4's acceptance criterion are worded against `core/` specifically; widening to `adapters/` is a layering decision, not a fix to this story.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4-get-one-legible-error-shape-from-every-endpoint.md`
+  summary: The error envelope carries no correlation id and the translator writes no log line, so a reported failure cannot be tied to anything server-side.
+  evidence: `toErrorResponse` copies `error.message` verbatim into the JSON and logs nothing on either branch, so an `internal` error can put a file path, SQL fragment or model output in the response body, and a user-reported failure has no identifier to trace. Severity is bounded today — the app is explicitly one process on localhost with no public interface — which is why this is recorded rather than fixed. The framework-sanctioned reporting hook is `instrumentation.ts`'s `onRequestError` (stable since Next 15, `context.routeType === "route"`), which pairs cleanly with a translator that only shapes the response. Revisit when the first real endpoint lands in Story 1.6.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4-get-one-legible-error-shape-from-every-endpoint.md`
+  summary: `errorEnvelopeSchema` is not `.strict()`, so an unknown key is silently stripped rather than refused.
+  evidence: `errorEnvelopeSchema.parse({ code, message, hint: "leak" })` succeeds and drops `hint`. The file's own doc comment claims "`app/api/` formats the HTTP response *around* this schema and adds no keys of its own" — `.strict()` is the mechanical form of that claim. Left as a decision rather than a patch because the same question was answered the other way for `pipelineCountsSchema` during Story 1.3's review (strict mode would break Epic 2's DB rows, which carry extra columns), and the two should be settled together rather than diverging by accident.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4-get-one-legible-error-shape-from-every-endpoint.md`
+  summary: `PIPELINE_STAGES` and `PIPELINE_STATES` are one letter apart, in the same directory, and mean different things.
+  evidence: `core/pipeline/pipeline-counts.ts` exports `PIPELINE_STATES` — the four posting states (discovered/tailored/approved/submitted) — and `core/pipeline/pipeline-stages.ts` now exports `PIPELINE_STAGES`, the six run stages. Adjacent files, near-identical identifiers, unrelated concepts; a misimport typechecks in neither direction only because the value types differ, and a reader has nothing but the letter to go on. Renaming one (e.g. `RUN_STAGES`) is the obvious fix, but the name came from the approved spec, so it is a naming decision to take deliberately rather than a defect to patch. Worth settling before Epic 3's runner imports the stages.

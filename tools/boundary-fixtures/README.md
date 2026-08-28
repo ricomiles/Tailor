@@ -11,9 +11,37 @@ re-export forms (`export … from` and `export * from`), a relative escape whose
 target does not resolve at all, escapes into unclassified directories by both
 relative and alias form, and the UI/state runtime (`react`, `zustand`).
 
-`clean-zod.ts` is the counterpart: `zod` must stay importable from `core/`, so
-an over-broad rule fails here rather than silently narrowing what the core may
-do.
+Two further classes need no import at all, so no import rule could ever have
+caught them. `Response` is a global — `throw new Response("x", { status: 400 })`
+inside `core/` satisfied every other rule in this file.
+
+- **An HTTP response built under `core/`** — construction with and without
+  `new`, a static call (`Response.json`), a `Response` type annotation, the
+  ambient `NextResponse` form, an alias (`const Aliased = Response`), the
+  binding spelled around entirely (`globalThis.Response`, both dotted and
+  bracketed, and destructured), a subclass, and an `instanceof` test. One fixture per shape:
+  every one of them is an AST node the rule can stop visiting on its own.
+- **An HTTP status carried under `core/`** — `statusCode` / `httpStatus` /
+  `statusText` unconditionally, as an object property, a computed string key, a
+  class field, a type member and a member access; plus a `status` whose value is
+  a number in 100–599, as a property and as an assignment.
+
+The clean counterparts are what stop an over-broad rule from silently narrowing
+what the core may do:
+
+- `clean.ts` — the load-bearing one. `scripts/verify-boundaries.mjs` hard-codes
+  it as the file it asks ESLint for a resolved config for, so it is what proves
+  the core rules are loaded as errors at all, and that `noInlineConfig` is still
+  set. A clean fixture that passes because no rule ran proves nothing.
+- `clean-zod.ts` — `zod` must stay importable from `core/`.
+- `clean-domain-status.ts` — `run_steps.status` is a domain status
+  (`pending | running | done | failed`) declared as a zod schema under `core/`.
+  A domain status is not an HTTP status, and the numeric-literal clause of
+  `tailor/no-http-status-in-core` exists so this file lints clean.
+- `clean-numeric-domain-status.ts` — the same argument for numbers, which is
+  where that clause could actually regress: a domain number outside the HTTP
+  range (`{ status: 7 }`), an unconstrained `z.number()`, and a `status: number`
+  type member.
 
 Each file declares its own expectation on line 1:
 
