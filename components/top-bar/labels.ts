@@ -1,6 +1,9 @@
 // Relative, not the `@/` alias: this module is loaded directly by the Node
 // test runner, which resolves neither tsconfig paths nor extensionless imports.
-import { boardCountSchema } from "../../core/boards/board-count.ts";
+import {
+  boardCountSchema,
+  type BoardCount,
+} from "../../core/boards/board-count.ts";
 import {
   PIPELINE_STATES,
   pipelineCountsSchema,
@@ -32,7 +35,7 @@ export function countLabels(counts: PipelineCounts): string[] {
  * the app ships today. The singular at one board has no source counterpart
  * and is decided in the story spec.
  */
-export function boardsLabel(boardCount: number): string {
+export function boardsLabel(boardCount: BoardCount): string {
   const parsed = boardCountSchema.parse(boardCount);
   if (parsed === 0) return "no boards yet";
   return `watching ${parsed} ${parsed === 1 ? "board" : "boards"}`;

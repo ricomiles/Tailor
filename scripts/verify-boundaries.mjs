@@ -51,6 +51,7 @@ import {
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RESOLVE_EXTENSIONS } from "../eslint.config.mjs";
+import { MARKER, observedHash, recordedHash } from "./e2e-gate.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURES = join(ROOT, "tools", "boundary-fixtures");
@@ -501,6 +502,74 @@ if (!EXPECTED_BUILD_CHAIN.test(buildScript)) {
       "check that sees a type-level escape, test is the only thing that runs the unit suite at " +
       "all, and verify:boundaries is the only thing exercising these fixtures.",
   );
+}
+
+// The chain regexes above pin the script *names* the build runs. They do not
+// pin what those names resolve to, so `"test": "true"` satisfied
+// EXPECTED_BUILD_CHAIN while the entire unit suite disappeared — the exact
+// substitution this guard exists to prevent, one level down.
+const EXPECTED_SCRIPT_BODIES = {
+  test: "node scripts/run-tests.mjs",
+  "test:e2e": "playwright test && node scripts/e2e-gate.mjs --record",
+  verify: "node scripts/verify.mjs",
+};
+for (const [name, expected] of Object.entries(EXPECTED_SCRIPT_BODIES)) {
+  const actual = pkg.scripts?.[name] ?? "";
+  if (actual !== expected) {
+    fail(
+      `package.json's ${name} script is "${actual}", not "${expected}". ` +
+        "The build chain asserts the script name only, so a substituted body " +
+        "would leave every check it names silently absent.",
+    );
+  }
+}
+
+// Pinning `verify`'s name is not enough now that it is a script file rather
+// than an inline chain: the body has to still run both halves.
+const verifySource = readFileSync(join(ROOT, "scripts/verify.mjs"), "utf8");
+for (const step of ['"build"', '"test:e2e"']) {
+  if (!verifySource.includes(step)) {
+    fail(
+      `scripts/verify.mjs no longer runs ${step}. verify is the only script ` +
+        "that builds and then renders the app.",
+    );
+  }
+}
+
+// The same argument one level up. `build` deliberately excludes the Playwright
+// suite — it needs a served production build — so `verify` is the only script
+// that runs it, and the e2e suite is the only thing in the repo that observes
+// the design system's rendered output: the loaded font faces, the colour tokens
+// resolving, the divider's dimensions, and the port's body reset.
+//
+// Asserting that `verify` is well-formed proves it exists, never that it ran.
+// With no CI and no hook, the whole suite could rot with `pnpm build` green, so
+// the freshness marker below is what actually gates it: if any source the e2e
+// assertions observe has changed since the last recorded run, the build stops.
+// `pnpm verify` turns the gate off for its own build step, because otherwise
+// the build that must precede the e2e run would be blocked by the e2e run not
+// yet having happened.
+if (process.env.TAILOR_E2E_GATE === "off") {
+  console.log("e2e freshness gate: off for this run (pnpm verify).");
+} else {
+  const observed = observedHash();
+  const recorded = recordedHash();
+  if (recorded === null) {
+    fail(
+      `The Playwright suite has never recorded a run (no ${MARKER}). ` +
+        "Run `pnpm verify` — `pnpm build` alone never renders the app, so " +
+        "nothing has checked the 39px contract, the colour tokens, or the " +
+        "loaded font faces.",
+    );
+  } else if (recorded !== observed) {
+    fail(
+      `The Playwright suite last ran against ${recorded.slice(0, 12)}, but the ` +
+        `sources it observes now hash to ${observed.slice(0, 12)}. Run ` +
+        "`pnpm verify`: the rendered assertions — the 39px border-box Epic 2 " +
+        "pins its action bar against, the divider, the colour tokens, the " +
+        "loaded font faces, the body reset — have not seen this code.",
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

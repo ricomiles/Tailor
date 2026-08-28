@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { boardsLabel, countLabels } from "../components/top-bar/labels.ts";
 import {
@@ -35,11 +36,41 @@ test("many boards are plural", () => {
   assert.equal(boardsLabel(14), "watching 14 boards");
 });
 
-test("every state the schema declares gets a label, and none other", () => {
-  assert.equal(countLabels(ZERO_PIPELINE_COUNTS).length, PIPELINE_STATES.length);
+/**
+ * Read against the design source rather than against `PIPELINE_STATES`.
+ *
+ * The previous form of this test asserted that
+ * `countLabels(...).map((l) => l.split(" ")[1])` equalled `PIPELINE_STATES` —
+ * but `countLabels` is implemented as `PIPELINE_STATES.map(...)`, so both sides
+ * were the same list and the test could not fail. What it was reaching for is
+ * the thing that can actually drift: the copy and order the design prints.
+ */
+const DESIGN_SOURCE =
+  "_bmad-output/inputs/design_handoff_resume_tailoring/Tailor.dc.html";
+
+test("the labels read as the design source prints them, in its order", () => {
+  const markup = readFileSync(DESIGN_SOURCE, "utf8");
+  const printed = [...markup.matchAll(/\{\{\s*counts\.(\w+)\s*\}\}\s+(\w+)/g)].map(
+    (match) => ({ field: match[1], word: match[2] }),
+  );
+
+  // The source is the authority on copy; if it stops being readable in this
+  // shape, that is a failure to investigate, not a test to skip.
+  assert.equal(
+    printed.length,
+    4,
+    `expected four count labels in ${DESIGN_SOURCE}, found ${printed.length}`,
+  );
+
   assert.deepEqual(
-    countLabels(ZERO_PIPELINE_COUNTS).map((label) => label.split(" ")[1]),
+    printed.map((label) => label.field),
     [...PIPELINE_STATES],
+    "the schema's field order no longer matches the order the design prints",
+  );
+  assert.deepEqual(
+    countLabels(ZERO_PIPELINE_COUNTS),
+    printed.map((label) => `0 ${label.word}`),
+    "the rendered copy no longer matches the design source",
   );
 });
 

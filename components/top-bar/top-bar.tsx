@@ -1,3 +1,4 @@
+import type { BoardCount } from "@/core/boards/board-count";
 import type { PipelineCounts } from "@/core/pipeline/pipeline-counts";
 import { boardsLabel, countLabels } from "./labels";
 import styles from "./top-bar.module.css";
@@ -20,13 +21,20 @@ export function TopBar({
   boardCount,
 }: {
   counts: Readonly<PipelineCounts>;
-  boardCount: number;
+  boardCount: BoardCount;
 }) {
   return (
     <header className={styles.bar}>
       <div className={styles.brand}>tailor</div>
-      <div className={styles.divider} />
-      <div className={styles.counts} role="status" aria-label="Pipeline counts">
+      {/* Decorative, so it carries no role — the testid is the only stable
+          handle a layout test has on an empty 1px element. */}
+      <div className={styles.divider} data-testid="divider" />
+      {/* `group`, not `status`. The design source carries no role here, and
+          `status` is a polite live region: once Epic 2 makes these counts
+          change, every update would announce all four labels on every
+          screen. A bare aria-label on a roleless div is ignored, so the role
+          cannot simply be dropped. */}
+      <div className={styles.counts} role="group" aria-label="Pipeline counts">
         {countLabels(counts).map((label) => (
           <span key={label}>{label}</span>
         ))}

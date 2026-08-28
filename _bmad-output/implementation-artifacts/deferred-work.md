@@ -56,21 +56,21 @@ Findings surfaced incidentally by review, not caused by the story that found the
 - summary: ESLint v9 is on the `maintenance` dist-tag; the v10 migration is unscheduled.
   evidence: `9.39.5` is the newest 9.x and npm marks it "no longer supported"; `latest` is 10.9.1. `eslint-config-next@16.3.0` peers `eslint >=9.0.0` so v10 may well work, but it is a real upgrade with its own flat-config and rule churn — out of scope for a code review of Story 1.1. Raised when pinning the lint toolchain on 2026-08-26.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
-  summary: Mechanize the "no hex color literal in a component file" rule as a `tailor/no-hex-color-literal` ESLint rule that blocks the build, with fixtures and a `verify:tokens` script proving it fires.
-  evidence: Story 1.2 AC #2 asserts no component file contains a hex literal. Today that is vacuously true — no component carries color yet — so the port satisfies it by inspection. Making it a standing invariant needs its own config block in `eslint.config.mjs` (the `tailor` plugin is registered only for `CORE_FILES` at L300), a `tools/token-fixtures/` set, a `scripts/verify-tokens.mjs`, and a lockstep edit to `EXPECTED_BUILD_CHAIN` at `scripts/verify-boundaries.mjs:493-503` plus the README script table. That is a second independently shippable deliverable, split out on 2026-08-26 to keep the port spec inside the scope standard. Must land before Story 1.3 writes the first components that carry color, or it becomes a retrofit.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
-  summary: The app-specific style layer the prototype implies — button size ramp, dense table padding, uppercase kickers, the sticky 39px bar, the 14px app base size, and the `tk-in`/`tk-blink` keyframes with their `prefers-reduced-motion` guard.
-  evidence: `Tailor.dc.html` contributes only four CSS rules and roughly 500 inline `style` attributes; it uses 5 of the ~30 design system classes and overrides properties on all five. None of it is design system and none of it appears in Story 1.2's acceptance criteria, so the port does not cover it. Story 1.3 (global chrome) is the first story that needs it. Recorded so it is not rediscovered mid-implementation.
-
 ## Deferred from: review of spec-1-2-port-the-modernist-design-system (2026-08-26)
 
 Faithfully ported defects present in the design source, plus gaps the port exposed. None are caused by Story 1.2, which was required to port verbatim.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
-  summary: A focused-and-checked `.seg-opt` shows no visible focus indicator.
-  evidence: `.seg-opt:has(input:focus-visible)` draws `2px solid var(--color-accent)` at `outline-offset: -2px` — inside the element — while `.seg-opt:has(input:checked)` has already filled it with `var(--color-accent)`. Accent on accent is invisible, so the selected segment is the one state with no keyboard focus cue. Verbatim from the source stylesheet.
+  summary: Mechanize the "no hex color literal in a component file" rule as a `tailor/no-hex-color-literal` ESLint rule that blocks the build, with fixtures and a `verify:tokens` script proving it fires.
+  evidence: Story 1.2 AC #2 asserts no component file contains a hex literal. Today that is vacuously true — no component carries color yet — so the port satisfies it by inspection. Making it a standing invariant needs its own config block in `eslint.config.mjs` (the `tailor` plugin is registered only for `CORE_FILES` at L300), a `tools/token-fixtures/` set, a `scripts/verify-tokens.mjs`, and a lockstep edit to `EXPECTED_BUILD_CHAIN` at `scripts/verify-boundaries.mjs:493-503` plus the README script table. That is a second independently shippable deliverable, split out on 2026-08-26 to keep the port spec inside the scope standard. **Deadline passed (noted 2026-08-27):** Story 1.3 shipped in `a8e0f6a` and this never landed, so it is now the retrofit it warned against. AC #2 itself still holds — `components/top-bar/top-bar.module.css` resolves every colour through `var()` — so the invariant is intact but unenforced, and the next component to carry colour is the one that can break it silently.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
+  summary: The app-specific style layer the prototype implies — button size ramp, dense table padding, uppercase kickers, the sticky 39px bar, the 14px app base size, and the `tk-in`/`tk-blink` keyframes with their `prefers-reduced-motion` guard.
+  evidence: `Tailor.dc.html` contributes only four CSS rules and roughly 500 inline `style` attributes; it uses 5 of the ~30 design system classes and overrides properties on all five. None of it is design system and none of it appears in Story 1.2's acceptance criteria, so the port does not cover it. Story 1.3 (global chrome) is the first story that needs it. Recorded so it is not rediscovered mid-implementation.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
+  summary: A focused-and-checked `.seg-opt` shows no visible focus indicator. **Reopened 2026-08-28** — the correction that closed it is itself clipped.
+  evidence: `.seg-opt:has(input:focus-visible)` drew `2px solid var(--color-accent)` at `outline-offset: -2px` — inside the element — while `.seg-opt:has(input:checked)` had already filled it with `var(--color-accent)`. Accent on accent is invisible, so the selected segment was the one state with no keyboard focus cue. Verbatim from the source stylesheet. The 08-27 code review moved the offset to `+2px`, which satisfies AC #5 and puts the ring outside the fill — but `.seg` sets `overflow: hidden` (`app/globals.css:202`), and an ancestor's overflow clips a descendant's outline. A ring painted 2px outside the `.seg-opt` border box therefore lands outside `.seg`'s padding box on the group's outer edges and is cut. So the defect traded "invisible because accent-on-accent" for "invisible because clipped" rather than closing. **Reopened 2026-08-28 by review round 2 of Story 1.3, not fixed:** `.seg-opt` has no consumer in the repo — grep matches only `app/globals.css` — so the clipped ring breaks nothing today. Fix it when the first segmented control ships, either with `.seg { overflow: visible }` (a further delta to a port whose count is already reconciled at eight) or by returning to `-2px` with a `var(--color-bg)` ring on the checked state.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
   summary: The 45% disabled treatment covers `.btn` and `.input` but not `.radio` or `.seg-opt`.
@@ -85,7 +85,7 @@ Faithfully ported defects present in the design source, plus gaps the port expos
   evidence: The backdrop is `position: fixed` with no stacking order, so any later stacking context paints over it. A dialog taller than the viewport clips at both ends with its actions unreachable and no scroll. This will bite the fabrication-rejection modal in Epic 3 (760px card, substantial body) and the blocked-metric dialog in Epic 4.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
-  summary: `--color-divider` sits near 2.4:1 against the ground, and several muted `color-mix` steps fall below 4.5:1.
+  summary: `--color-divider` sits near 2.4:1 against the ground, and several muted `color-mix` steps fall below 4.5:1. (Inventory extended 2026-08-27 — see the `.btn-primary` entry in the 08-27 section for `.table th`, the opacity-based muting, and the primary button's own label.)
   evidence: The divider is the only border on `.input`, `.seg`, and `.btn-secondary` — the elements whose boundary carries meaning — and 3:1 is the non-text minimum. `.card-meta` at 50% and `.text-muted`/`figcaption` at 55% are 10–12px text below the normal-text threshold. Design-source values; changing them is a design decision, not a port.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
@@ -97,8 +97,8 @@ Faithfully ported defects present in the design source, plus gaps the port expos
   evidence: The epic mandates text characters rather than icons (`−`, `+`, `✓`, `›`, `·`, `!`, `←`). U+2190 and U+2713 are in neither the `latin` nor the `latin-ext` Google Fonts subset, so they resolve to `system-ui` mid-line. `−` (U+2212), `·`, and `›` (U+203A) are covered. First visible in Story 1.3's `← Queue` control and the tailoring step list's `✓`.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
-  summary: `<strong>`, `<b>`, and unstyled `<th>` request weight 700, which is not loaded.
-  evidence: Only 400/600/800 ship, so CSS font matching resolves a 700 request upward to 800. The rendered weight stays inside the sanctioned set, so this is not a defect today, but any component relying on default bold gets 800 rather than the 600 the type scale uses for emphasis. Worth an explicit `strong, b { font-weight: 600 }` when the app layer lands.
+  summary: `<strong>`, `<b>`, and `.table th` request weight 700, which is not loaded.
+  evidence: Only 400/600/800 ship, so CSS font matching resolves a 700 request upward to 800. The rendered weight stays inside the sanctioned set, so this is not a defect today, but any component relying on default bold gets 800 rather than the 600 the type scale uses for emphasis. Worth an explicit `strong, b { font-weight: 600 }` when the app layer lands. **Corrected 2026-08-27:** `<th>` is not "unstyled" — `.table th` is a design-system class that simply never resets `font-weight`, so it inherits the UA's `bold` and resolves to 800. A `strong, b` rule alone therefore misses the one case that lives inside the system; the fix needs `.table th` too.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
   summary: The deferred `verify:tokens` script must scan `.css`, not just `.ts`/`.tsx`.
@@ -131,3 +131,79 @@ Faithfully ported defects present in the design source, plus gaps the port expos
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
   summary: The deferred `verify:tokens` script should also assert the `--font-archivo` coupling and anchor its hex match to color contexts.
   evidence: The `variable:` literal in `layout.tsx` and `var(--font-archivo)` in `globals.css` are a bare-string coupling that `tsc`, ESLint, and `next build` all ignore — break either end and every glyph silently renders in the fallback face with all gates green. The same script should assert the two ends match. Separately, a bare `#[0-9a-fA-F]{3,8}` also matches URL fragments and element ids while missing `rgb()`, `hsl()`, and named colors, so the check needs anchoring to color contexts rather than raw hex shape.
+
+## Deferred from: code review of spec-1-2-port-the-modernist-design-system (2026-08-27)
+
+Source-level gaps the port carried faithfully, plus invariants the port asserts but nothing enforces. None are caused by Story 1.2. The six-delta claim was verified against the in-repo source and holds.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
+  summary: `.dialog-backdrop` has no `z-index` and the app has no `--z-*` scale — extends the existing backdrop entry with a concrete conflict.
+  evidence: `components/top-bar/top-bar.module.css:17` already claims `z-index: 40`. A `position: fixed` backdrop with no stacking order paints *under* the sticky global chrome, so the first modal in Epic 3 or 4 opens behind the bar. The design system defines no z-index scale at all, so every consumer will invent one.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
+  summary: Forced-colors / Windows High Contrast strips every background-only state in the component layer.
+  evidence: `.seg-opt:has(input:checked)` and `.radio input:checked + .dot` both signal selection with `background` alone. Under `forced-colors: active` the UA overrides backgrounds, so checked and unchecked render identically. Needs a `@media (forced-colors: active)` block using `Highlight`/`HighlightText` with `forced-color-adjust: none`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
+  summary: `::selection` is unreadable over the two accent-filled surfaces.
+  evidence: `app/globals.css:115` tints selection with `color-mix(in srgb, var(--color-accent) 30%, transparent)` and never sets a selection `color`. Over `.btn-primary` and checked `.seg-opt` — both near-white text on accent — selected text sits on an accent-tinted highlight at roughly the same value. Setting an explicit selection `color` closes it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
+  summary: The form layer covers only text inputs — no placeholder, no `select`, no checkbox, no toggle — and `.tag` has no default.
+  evidence: `.input` sets `width: 100%; min-height: 36px`, which stretches a checkbox or radio to full width and 36px tall, and leaves `select` with native chrome. `.input::placeholder` is unstyled, so placeholders fall to UA gray outside the palette. `.tag` with no variant class renders as inherited text with padding and no chip boundary. A filter bar or answers pane needs all of these.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
+  summary: `.table tbody th` row headers render as column headers, and bare `.btn` has no interactive feedback.
+  evidence: `.table th` is scoped to all `th`, so a `<th scope="row">` shrinks to 11px uppercase muted. Separately, hover and active states are defined only on `.btn-primary`, `.btn-secondary`, and `.btn-ghost` — a bare `.btn` or `.btn-icon` is transparent with no pointer feedback at all.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
+  summary: Programmatic focus on `tabindex="-1"` shows no ring.
+  evidence: `:focus { outline: none }` at `app/globals.css:113` clears the default and `:focus-visible` restores it only for heuristic keyboard focus. Calling `element.focus()` on a `tabindex="-1"` target — the standard route-change and dialog-open pattern — matches `:focus` but not `:focus-visible`, so the keyboard user loses their position silently.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
+  summary: The palette has one accent, no semantic status colors, and no form error state; `--color-accent-2-*` collapses onto the accent ramp.
+  evidence: There is no success/warning/error/info token, no `aria-invalid` treatment, and no hint or error line anywhere. `--color-accent-2-100` is byte-identical to `--color-accent-100` and the design readme states the mono palette outright ("accent-2 reads the same as accent") — but nothing in this repo records it, so a consumer reaching for `.tag-accent-2` expecting a second semantic color gets the same red. Epics 3 and 4 need pipeline states, blocked metrics, and fabrication rejections to be colour-distinguishable.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
+  summary: The readme's "prefer ramp steps over ad-hoc `color-mix()`" rule ships unimplemented and unrecorded.
+  evidence: 18 rules use raw `color-mix()` (`.btn-secondary` hover/active, `.btn-ghost` hover/active, `.input:hover`, `.field > label`, `.text-muted`, `figcaption`, `.card-meta`, `.table th`, `.table tbody tr:hover`, `.dialog-backdrop`, `::selection`, `--color-divider`, three `--shadow-*`). Porting verbatim is defensible because the readme says "prefer" rather than "never" — but the spec's Always-clause ("where the source contradicts its readme, the readme governs") is stated absolutely and the five-correction list is closed, so the tension belongs somewhere explicit.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
+  summary: The diffability invariant is asserted in the file header but nothing enforces it, though it is scriptable.
+  evidence: `app/globals.css:1` declares "this file must stay diffable against that source" and the spec admits "nothing else enforces it". The source sits in-repo at a fixed path, so `diff <(tail -n +3 "$SRC") <(tail -n +3 app/globals.css)` is a mechanizable `verify:design-parity` link of the same shape as the already-deferred `verify:tokens`. Story 1.2's Boundaries forbid touching `scripts/` or the build chain, so it could not land here. Note also that every fix listed above edits `app/globals.css` and therefore trades away diffability — each needs a decision on whether it goes upstream into `styles.css`, into a fork, or into an app-layer override sheet.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md`
+  summary: `.btn-primary`'s own label misses AA at 3.76:1 — the app's most-used action, and the one contrast defect the earlier entry omitted.
+  evidence: `background: var(--color-accent)` with `color: var(--color-bg)` is `#f3f2f2` on `#ec3013` = 3.76:1 at 14px; 800 weight at 14px is not WCAG large text, so the threshold is 4.5:1, not 3:1. Checked `.seg-opt` uses the same pair at 13px. Pure white reaches only 4.2:1, so no fix stays inside the palette — clearing AA requires retuning `--color-accent` itself. Deferred on 2026-08-27 as a design-value decision rather than a port correction, matching how the divider and muted-step contrast defects were handled. Note the earlier contrast entry's inventory is also incomplete: it omits `.table th` (60% mix at 11px ≈ 4.2:1) and the opacity-based muting on `.card-body` (0.8) and `.dialog-body` (0.85).
+
+## Deferred from: code review of spec-1-3-see-the-app-s-global-chrome (2026-08-27)
+
+Round-2 review, four layers. Items that are either deliberate, already tracked elsewhere, or inherited from an earlier story. Everything actionable stayed in the story file as a patch or a decision.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-see-the-app-s-global-chrome.md`
+  summary: `.bar { overflow: hidden }` silently truncates the counts and boards label, and the 380px e2e test enshrines a narrow viewport as covered while asserting only the height.
+  evidence: `components/top-bar/top-bar.module.css:34` clips deliberately — the module comment argues that a 39px contract means nothing inside may grow the bar, and that wrapped text on a sticky element would drag every screen down. The epic scopes the app to a wide desktop viewport with no responsive layouts, so there is no consumer today. What is worth revisiting when Epic 2 lands multi-digit counts: `e2e/top-bar.spec.ts:101-105` sets a 380px viewport and asserts only `box.height === 39`, so it reads as narrow-viewport coverage while the content it would clip goes unmeasured. A `toBeInViewport()` on the boards label would close that without changing the clip.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-see-the-app-s-global-chrome.md`
+  summary: `z-index: 40` ships as an unexplained literal in a file that justifies every other literal it carries.
+  evidence: `components/top-bar/top-bar.module.css:17`. The value is faithful to the design source (`Tailor.dc.html:23`), and the module header explains why 39px/20px/14px/18px ship as literals rather than being rounded onto the `--space-*` scale — but says nothing about stacking order. The concrete conflict it creates is already tracked in the 2026-08-27 Story 1.2 entry above (`.dialog-backdrop` with no `z-index` paints under the chrome). Recorded here only so the two are read together; the fix is a `--z-*` scale, which belongs to whichever story first needs a modal.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-see-the-app-s-global-chrome.md`
+  summary: `playwright` is a runtime dependency of a private app, now duplicated by `@playwright/test` in devDependencies.
+  evidence: `package.json:26` pins `playwright@1.62.1` under `dependencies`; this story adds `@playwright/test@1.62.1` under `devDependencies` (`:33`). The README's core-ban list names `playwright` explicitly as something the architecture excludes. Pre-existing — added in `56ee9ca` (Story 1.1) — and not simply removable: `tools/boundary-fixtures/core/canon/forbidden-package-playwright.ts:2` imports `chromium` from it as the fixture proving AD-1 fires on that package. The fix is to move it to `devDependencies` alongside its sibling, which is a manifest change Story 1.3's Code Map does not sanction.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-see-the-app-s-global-chrome.md`
+  summary: This file's own fix-list is becoming a chain of cross-references rather than a set of standalone items.
+  evidence: Two separate `.dialog-backdrop` z-index entries now exist (the 2026-08-26 one and the 2026-08-27 one that "extends" it) rather than one amended entry, and the 2026-08-27 `.btn-primary` contrast entry closes by listing what an *earlier* contrast entry omits (`.table th`, `.card-body`, `.dialog-body`) instead of amending it. A reader triaging this register has to reconstruct each defect from two or three places. Housekeeping, not a code defect — worth a pass before Epic 2 adds its own entries.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-see-the-app-s-global-chrome.md`
+  summary: Story 1.2's correction 6 is a no-op — it re-declares the value it already inherits — so one of the eight counted deltas changes nothing.
+  evidence: The base rule at `app/globals.css:125` is already `:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px }`. Correction 6 writes `.input:focus-visible { border-color: var(--color-accent); outline-offset: 2px }` (`:179`), whose offset is identical to what the base rule supplies. Deleting the source's `outline-offset: 0` override would produce the same rendered result, be a smaller diff against `styles.css`, and be self-documenting; as written a reader cannot tell the declaration is redundant. Harmless as shipped, and a Story 1.2 port-discipline call rather than a Story 1.3 defect.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-see-the-app-s-global-chrome.md`
+  summary: AC #5's throw is proven at the label functions, not at the render path — the whole gate stays green with the validation removed from the component.
+  evidence: `components/top-bar/labels.ts` parses and throws, and eleven unit tests cover it. Nothing proves `top-bar.tsx` calls it. Mutation-tested during review round 2: replacing `countLabels`/`boardsLabel` in the component with direct interpolation left `pnpm build` at exit 0 and the full Playwright suite passing. Deferred 2026-08-28: `app/layout.tsx` supplies `ZERO_PIPELINE_COUNTS` unconditionally, so no call site can exercise the throw until Epic 2 swaps the supply — revisit as part of that swap. Closing it needs either a fixture route rendering `TopBar` with invalid counts (Story 1.3's Never list scopes routes out) or a CSS-Module stub loader for the Node suite; neither is justified while the only input is a frozen zero constant.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-see-the-app-s-global-chrome.md`
+  summary: The top bar's boards label ships below WCAG AA at about 3.9:1 — the one contrast defect this story introduces rather than inherits.
+  evidence: `.boards` is 10px `var(--color-neutral-600)` (`#7d7979`) on `var(--color-bg)` (`#f3f2f2`) in `components/top-bar/top-bar.module.css:69-72`, roughly 3.9:1 against the 4.5:1 minimum for normal text. Both the size and the token come from the design source, which Story 1.3 gives authority over visuals, so the fix belongs upstream rather than in a local override — `--color-neutral-700` would clear it at about 5.8:1. The story's Design Notes called this "escalated not patched", but the escalation never reached this register; it lived only in a spec paragraph and a CSS comment. Filed here on 2026-08-28 by review round 2 so it sits with the other contrast defects (`--color-divider`, the muted `color-mix` steps, `.btn-primary`) rather than alone. The 11px counts at `--color-neutral-700` already pass.

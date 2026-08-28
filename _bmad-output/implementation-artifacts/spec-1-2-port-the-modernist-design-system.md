@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-08-26'
 status: 'done'
 baseline_commit: 'aa8af17ede6d7873995c3a3e1887ab0823a8aea1'
-review_loop_iteration: 1
+review_loop_iteration: 3
 context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 ---
 
@@ -20,7 +20,7 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 
 **Always:**
 - The port stays **diffable against the source**: same order, same section comments, same values. A future retune must read as a clean diff against `styles.css`.
-- Where the source `styles.css` contradicts its own `readme.md`, the **readme governs** — it is the design system's stated intent. All five corrections are enumerated in Design Notes; make no others silently.
+- Where the source `styles.css` contradicts its own `readme.md`, the **readme governs** — it is the design system's stated intent. All seven corrections are enumerated in Design Notes; make no others silently. (Five at approval; corrections 6 and 7 were added by the 2026-08-27 code review with the human's explicit sign-off — see Spec Change Log, Iteration 3.)
 - `--font-heading` / `--font-body` keep their `system-ui, sans-serif` fallback tail.
 - Hex literals appear only inside the `:root` block, which is where the source puts them.
 
@@ -70,6 +70,37 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 - Given the repository, when I search it for `support.js` or `_ds_bundle.js`, then neither has been ported.
 - Given a clean tree, when I run `pnpm build`, then it exits 0.
 
+
+### Review Findings
+
+*Code review 2026-08-27 — four layers (blind-hunter, edge-case-hunter, verification-gap, acceptance-auditor). The six-delta claim was independently verified against the in-repo source and holds: no unenumerated value change, no dropped/reordered/invented token.*
+
+- [x] [Review][Patch] AC #5 is violated by two ported focus rules — **resolved 2026-08-27: correct both rules** as a sixth and seventh sanctioned correction, each with an inline readme citation, and amend the spec's delta count and Design Notes accordingly. Original finding: AC #5 and the readme both require a 2px accent outline at **2px offset** on every interactive element, with no exception clause. `.input:focus-visible` ships `outline-offset: 0` and `.seg-opt:has(input:focus-visible)` ships `outline-offset: -2px`; both outrank the base `:focus-visible` rule on specificity. These are source-vs-readme contradictions of exactly the kind the "readme governs" Always-clause covers, yet neither is among the five sanctioned corrections nor recorded as deferred. Unlike the border-radius AC, which was given an explicit `.radio .dot` carve-out, AC #5 has none — so it is failed as written. Either correct both rules (a sixth and seventh delta, breaking the closed five-correction list) or amend AC #5 with a named carve-out and defer. [`app/globals.css:166`, `app/globals.css:198`, `app/globals.css:114`]
+- [x] [Review][Defer] `.btn-primary`'s own label misses AA — **resolved 2026-08-27: record as a deferred design decision**, alongside the existing divider and muted-step contrast entries; no fix stays inside the palette, so retuning the accent is a design call rather than a port correction. Original finding: `background: var(--color-accent)` with `color: var(--color-bg)` is `#f3f2f2` on `#ec3013` = **3.76:1** at 14px; 800 weight at 14px is not WCAG large text, so the threshold is 4.5:1. Checked `.seg-opt` uses the same pair at 13px. Switching to pure white only reaches 4.2:1 — there is no fix that stays inside the palette, so this is a design-value decision, not a port correction. The existing contrast entry in `deferred-work.md` covers only `--color-divider` and the muted `color-mix` steps, leaving the app's most-used action with no recorded defect. Options: record as a deferred design decision, or deviate from the source now. [`app/globals.css:139`, `app/globals.css:196`]
+- [x] [Review][Patch] `subsets: ["latin"]` is flagged "do not reopen" on a rationale that only evaluated canon data — **resolved 2026-08-27: rescope the rejection to canon content and add `latin-ext` to the subsets array.** `←`/`✓` remain deferred, as latin-ext excludes them too. Original finding: the spec's Change Log justifies the subset by canon content ("only non-ASCII are U+2013/U+2014 dashes"). But the epic mandates a **UI** glyph set (`−`, `+`, `✓`, `›`, `·`, `!`, `←`), and Google's `latin` range excludes U+2190 (`←`) and U+2713 (`✓`); latin-ext accented characters in employer or candidate names are a second uncovered case. `deferred-work.md` records the glyph gap, but the spec's stronger "Rejected, do not reopen" flag would block the fix. Rescope the rejection to canon content, or lift it and add `latin-ext`. [`app/layout.tsx:14`]
+
+- [x] [Review][Patch] Spec Design Notes snippet still shows the fallback-less font token, contradicting both its own narrative and the shipped code — a re-derivation copying that block silently reintroduces the UA-serif bug Iteration 2 was written to fix [`_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md:123-125`]
+- [x] [Review][Patch] The e2e brand test asserts the font *declaration*, never the loaded face — `computed.fontWeight` reads `--font-heading-weight`, so dropping `"800"` from the weight array ships headings in the wrong face with every gate green; `document.fonts` appears nowhere in the repo [`e2e/top-bar.spec.ts:60-76`]
+- [x] [Review][Patch] No test observes any color token resolving — dropping `--color-bg` makes `background: var(--color-bg)` invalid at computed-value time and the sticky chrome renders transparent, while every existing assertion (height, border, position, y) still passes [`e2e/top-bar.spec.ts`, `components/top-bar/top-bar.module.css:29`]
+- [x] [Review][Patch] The port's `body { margin: 0 }` reset is unverified — `boundingBox()` is read for `height` and `y` only, never `x` or `width`, so a returned 8px UA body margin would inset the full-bleed chrome and pass all four geometry tests [`e2e/top-bar.spec.ts:20`, `e2e/top-bar.spec.ts:103`]
+- [x] [Review][Patch] The only suite that observes this change runs outside the build gate and nothing pins it there — `verify-boundaries.mjs` hard-asserts the exact `build` chain but has no equivalent for `verify` (`build && test:e2e`), and the README script table omits `test`, `test:e2e`, and `verify` entirely while its `build` row is already stale [`scripts/verify-boundaries.mjs:493`, `README.md:24-31`]
+- [x] [Review][Patch] The `no-hex-color-literal` entry's "must land before Story 1.3" deadline has passed — 1.3 shipped in `a8e0f6a`, no `verify:tokens` script or rule exists, so the item is now the retrofit it warned against. AC #2 itself still holds: `top-bar.module.css` uses only `var()` [`_bmad-output/implementation-artifacts/deferred-work.md:58`]
+- [x] [Review][Patch] Two Story 1.2 deferred entries are filed under the Story 1.1 section header, above the 1.2 header that should contain them [`_bmad-output/implementation-artifacts/deferred-work.md:59`, `_bmad-output/implementation-artifacts/deferred-work.md:63`]
+- [x] [Review][Patch] The contrast and weight-700 deferred entries are incomplete — the contrast inventory omits `.table th` (60% mix at 11px ≈ 4.2:1) and the opacity-based muting (`.card-body` 0.8, `.dialog-body` 0.85); the weight-700 entry calls `<th>` "unstyled" when `.table th` is a design-system class that simply never resets `font-weight`, so its proposed `strong, b` fix misses the one case inside the system [`_bmad-output/implementation-artifacts/deferred-work.md`]
+- [x] [Review][Patch] The spec's claim that "Story 1.3 is its first consumer" of weight 600 is now false — 1.3 has landed and nothing in `app/` or `components/` requests 600, so the third self-hosted face is preloaded dead payload [`_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md:129`, `app/layout.tsx:14`]
+- [x] [Review][Patch] Ported comments that are now false in this repo, plus the one uncommented delta — the elevation note describes "a hairline edge + ambient darkness on a dark one" for a palette the port pins to `color-scheme: light`; "no JavaScript, no build step" sits inside a Next app whose fonts are wired through a build step; `foundations/` and `components/` are not in `_ds/`; and the font rebind is the only one of the six deltas with no inline comment despite the header claiming all are commented [`app/globals.css:1`, `app/globals.css:50`, `app/globals.css:65`, `app/globals.css:83`]
+
+- [x] [Review][Defer] `.dialog-backdrop` has no `z-index` while the sticky top bar already claims `z-index: 40` — the backdrop will paint *under* the chrome; there is no `--z-*` scale to order them [`app/globals.css:257`] — deferred, pre-existing
+- [x] [Review][Defer] Forced-colors / Windows High Contrast strips the background-only checked state, making checked radios and selected segments indistinguishable [`app/globals.css:171-198`] — deferred, pre-existing
+- [x] [Review][Defer] `::selection`'s accent tint over `.btn-primary` and checked `.seg-opt` (both near-white on accent) is unreadable [`app/globals.css:115`] — deferred, pre-existing
+- [x] [Review][Defer] `.input::placeholder` is unstyled, so placeholders fall to UA gray outside the system [`app/globals.css:159-168`] — deferred, pre-existing
+- [x] [Review][Defer] `.input` breaks on `select`, checkbox, radio, range and file types; `.tag` has no default variant; bare `.btn` and `.btn-icon` have no hover or active feedback [`app/globals.css:127-168`, `app/globals.css:220`] — deferred, pre-existing
+- [x] [Review][Defer] `.table tbody th` row headers render as 11px uppercase muted text, misreading as column headers [`app/globals.css:245-249`] — deferred, pre-existing
+- [x] [Review][Defer] Programmatic focus on `tabindex="-1"` (route change, dialog open) shows no ring, so keyboard users lose position [`app/globals.css:113`] — deferred, pre-existing
+- [x] [Review][Defer] No semantic status colors (success/warning/error/info) and no form error or `aria-invalid` state; `--color-accent-2-*` collapses onto the accent ramp — the design readme documents the mono palette, nothing in-repo does [`app/globals.css:40-48`, `app/globals.css:226`] — deferred, pre-existing
+- [x] [Review][Defer] The readme's "prefer ramp steps over ad-hoc `color-mix()`" rule ships unimplemented across 18 rules — neither a sanctioned correction nor a recorded deferral [`app/globals.css`] — deferred, pre-existing
+- [x] [Review][Defer] Diffability is asserted at `globals.css:1` but nothing enforces it — the source sits in-repo at a fixed path, so the parity diff is scriptable as a `verify:design-parity` link, but 1.2's Boundaries forbid touching the build chain [`app/globals.css:1`, `_bmad-output/implementation-artifacts/spec-1-2-port-the-modernist-design-system.md:143`] — deferred, pre-existing
+
 ## Spec Change Log
 
 **Iteration 1 (2026-08-26) — two corrections were incomplete, and the palette never declared its theme.**
@@ -90,8 +121,18 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 
 *Routed as patch, not bad_spec, deliberately.* The only code change is one token per font token. Re-deriving a mechanical 252-line port to apply it would risk transcription drift without reducing any. The spec text was corrected in the same pass, so spec and code stay coherent — the outcome the loopback exists to produce. Verified afterwards by re-running the full Verification section.
 
+**Iteration 3 (2026-08-27) — code review; two focus corrections adopted, one contrast defect deferred.**
+
+*Triggering findings.* (a) AC #5 requires a 2px accent outline at 2px offset on every interactive element with no exception clause, but `.input:focus-visible` shipped `outline-offset: 0` and `.seg-opt:has(input:focus-visible)` shipped `-2px`, both outranking the base rule on specificity — source-vs-readme contradictions the "readme governs" clause covers, yet neither was a sanctioned correction nor a recorded deferral. (b) `.btn-primary`'s own label is `#f3f2f2` on `#ec3013` = 3.76:1 at 14px, below the 4.5:1 normal-text threshold, and no deferred entry recorded it. (c) The Design Notes CSS snippet still showed the fallback-less `var(--font-archivo)` that Iteration 2's own narrative had corrected. (d) `subsets: ["latin"]` was flagged "do not reopen" on a rationale that evaluated canon content only, not the epic's mandated UI glyph set or accented names.
+
+*Amended.* Corrections 6 and 7 adopted, with the count updated to seven everywhere the "make no others silently" rule depends on it. The snippet now carries the inner fallback. `latin-ext` added to the subsets array and the rejection rescoped to canon content. The `.btn-primary` contrast defect is recorded in `deferred-work.md` as a design-value decision — no fix stays inside the palette, since pure white reaches only 4.2:1.
+
+*Verification added.* Three Playwright tests now pin what nothing observed: the loaded Archivo faces at 400/600/800 (the old assertion read the CSS declaration, not the face), the chrome's colour tokens resolving, and the port's `body { margin: 0 }` reset. Each was mutation-tested — drop the weight, rename the token, or remove the margin and exactly that test fails. `verify:boundaries` now pins the `verify` chain the way it already pinned `build`, so `test:e2e` cannot be silently unhooked.
+
+*Rejected, do not reopen — unchanged from Iteration 1, except:* the `subsets` rejection is now scoped to **canon content only**. `←` (U+2190) and `✓` (U+2713) fall outside every Google subset and remain deferred.
+
 **KEEP — must survive re-derivation.**
-- The six-delta discipline (the font rebind plus the five corrections): the port diffed against the source with *only* the font rebind, the corrections, and whitespace showing. Verify with the diff command, do not eyeball it.
+- The eight-delta discipline (the font rebind plus the seven corrections): the port diffed against the source with *only* the font rebind, the corrections, and whitespace showing. Verify with the diff command, do not eyeball it.
 - Each correction carries a short inline comment citing the readme rule it implements.
 - `.btn-block` keeps its own `justify-content`/`text-align` rather than dropping declarations the source defines, even though correction 2 makes them redundant.
 - The `@import` is dropped, never translated into a `<link>` or a runtime fetch.
@@ -99,13 +140,16 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 
 ## Design Notes
 
-**Five corrections.** The first four are places where `styles.css` contradicts its own `readme.md` or the story's acceptance criteria; the fifth is the one addition with no source counterpart. Each is deliberate and reviewable — not a transcription slip:
+**Seven corrections.** The first four are places where `styles.css` contradicts its own `readme.md` or the story's acceptance criteria; the fifth is the one addition with no source counterpart; the sixth and seventh were added by the 2026-08-27 code review. Each is deliberate and reviewable — not a transcription slip:
 
 1. **`a` color** (source L95: `color: var(--color-accent)`) → `var(--color-accent-700)`. The readme is explicit that the accent-to-ground pair is tuned to 3:1, "enough for icons, large text and interface chrome, not for body copy — so for paragraph-size text in the accent use a deep ramp step (`--color-accent-700` on this ground)". A link is paragraph-size text. The correction stops at `a` on purpose: the same readme sentence rates the 3:1 pair as "enough for icons, large text and interface chrome", and `.btn-ghost`, `.card-kicker`, `.tag-outline`, and `.nav a:hover` are all chrome. Leave them on the raw accent.
 2. **`.btn` alignment** (source L116: `justify-content: center`) → `flex-start`, plus `text-align: left`. The readme mandates flush-left labels: "a button wider than its label starts the text at the left padding edge … never centered." The source honors this only on `.btn-block`. **`.btn-icon` must re-center**: add `justify-content: center` to it. It is a 36×36 square with `padding: 0` and no label — the readme's rule governs *labels*, so inheriting `flex-start` pins its glyph to the left edge, which is a defect, not flush-left alignment.
 3. **`.input:disabled`** — the source dims only `.btn:disabled` (L125). Add `.input:disabled { opacity: 0.45; cursor: not-allowed; }` so "a disabled control drops to 45%" holds for the other control class. Do not extend it further.
 4. **`.radio .dot { border-radius: 50% }`** (source L157) — **kept as-is.** The readme's rule is "do not round a corner"; a radio indicator is a circle, not a rounded corner, and squaring it makes radio and checkbox indistinguishable. This is the one exception to the zero-radius criterion and is named there.
 5. **`:root { color-scheme: light; }`** — **added**, the one declaration with no counterpart in the source. The ported palette is fixed light with no `prefers-color-scheme` branch, so without this an OS-dark viewer gets dark UA chrome — scrollbars, native pickers, autofill — against a light ground. The source is a theme-agnostic library; this app has settled on one theme and must say so.
+
+6. **`.input:focus-visible` offset** (source: `outline-offset: 0`) → `2px`. AC #5 and the readme both state the focus ring as `outline: 2px solid var(--color-accent); outline-offset: 2px` on **every** interactive element, and AC #5 — unlike the zero-radius criterion — carries no exception clause. The source pinned the ring to the input's border; the readme governs.
+7. **`.seg-opt:has(input:focus-visible)` offset** (source: `outline-offset: -2px`) → `2px`. Same rule. The source drew the ring *inside* the element, so on a checked segment — already filled with `var(--color-accent)` — it was accent on accent and therefore invisible. Moving it outside the fill satisfies AC #5 and closes the deferred "no visible focus indicator" defect in one edit.
 
 **Font binding.** The source's L2 `@import` is dropped rather than translated — it is a render-blocking request to a third party from an app whose premise is one process on one machine. `next/font` self-hosts the files at build time. Static weights are requested instead of the variable face on purpose: Next recommends variable fonts for flexibility, but the design constrains type to exactly three weights, and loading only those three makes the constraint physical rather than advisory.
 
@@ -122,11 +166,11 @@ const archivo = Archivo({
 
 ```css
 /* app/globals.css — inside :root */
---font-heading: var(--font-archivo), system-ui, sans-serif;
---font-body: var(--font-archivo), system-ui, sans-serif;
+--font-heading: var(--font-archivo, system-ui), system-ui, sans-serif;
+--font-body: var(--font-archivo, system-ui), system-ui, sans-serif;
 ```
 
-Weight 600 ships unused by this story: the design system references only 400 (`body`) and 800 (`--font-heading-weight`). It is loaded because the app layer needs it — the handoff sets diff proposed text at 15.5px weight 600 — so Story 1.3 is its first consumer.
+Weight 600 ships unused by this story: the design system references only 400 (`body`) and 800 (`--font-heading-weight`). It is loaded because the app layer needs it — the handoff sets diff proposed text at 15.5px weight 600. **Corrected 2026-08-27:** Story 1.3 has landed and requests 600 nowhere, so the prediction that it would be the first consumer was wrong; the third face is preloaded dead payload until the diff view arrives. Kept deliberately — the three-weight constraint is the point — but it is a cost, not a no-op.
 
 A `var()` fallback guards the token: `var(--font-archivo, system-ui)`. Without the inner fallback an undefined `--font-archivo` makes the whole declaration invalid at computed-value time, and `font-family` drops to the UA default serif — the `system-ui, sans-serif` tail on the outside never gets a chance to apply.
 
@@ -140,7 +184,7 @@ Italic is **not** loaded. The design system loads none, and the only italic in t
 - `pnpm lint` -- expected exit 0.
 - `pnpm build` -- expected exit 0; the `build` chain is unchanged by this story.
 - `pnpm typecheck` -- expected exit 0. Listed separately from `build` because the Code Map's `layout.tsx` typing decision depends on it.
-- `SRC=_bmad-output/inputs/design_handoff_resume_tailoring/_ds/modernist-f8562a2f-380c-4e83-bd66-6cba1fb04c4a/styles.css; diff <(tail -n +3 "$SRC") <(tail -n +3 app/globals.css)` -- expected: **only** the font-variable rebind, the five Design Notes corrections with their inline comments, and whitespace. `diff` exits 1 whenever it prints anything, so read the hunks; do not gate on the exit code. Both files are trimmed by two lines because the port replaces the source's header and `@import` with its own two-line header. This is the only mechanical check of the "diffable against the source" rule; nothing else enforces it.
+- `SRC=_bmad-output/inputs/design_handoff_resume_tailoring/_ds/modernist-f8562a2f-380c-4e83-bd66-6cba1fb04c4a/styles.css; diff <(tail -n +3 "$SRC") <(tail -n +3 app/globals.css)` -- expected: **only** the font-variable rebind, the seven Design Notes corrections with their inline comments, and whitespace. `diff` exits 1 whenever it prints anything, so read the hunks; do not gate on the exit code. Both files are trimmed by two lines because the port replaces the source's header and `@import` with its own two-line header. This is the only mechanical check of the "diffable against the source" rule; nothing else enforces it.
 - With `pnpm dev` running: `curl -sS localhost:3000` names a `/_next/static/**.css` chunk; that chunk must match `--font-archivo:` and `--font-heading:\s*var\(--font-archivo`, and the `<html>` tag must carry the generated variable class -- expected: all three present. Match with a regex, not a literal space, so dev/prod formatting differences do not read as a wiring failure. `variable:` in `layout.tsx` and `var(--font-archivo)` in the CSS are a bare-string coupling across two files that lint, typecheck, and `next build` all ignore.
 - `grep -rn "fonts.googleapis.com\|support\.js\|_ds_bundle" app/ components/ adapters/ core/` -- expected: no matches.
 - `grep -rnE "#[0-9a-fA-F]{3,8}\b" app/ components/ adapters/ --include=*.ts --include=*.tsx` -- expected: no matches.

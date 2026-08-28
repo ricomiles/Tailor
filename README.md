@@ -5,13 +5,18 @@ anything the canon does not support.
 
 ## Requirements
 
-- Node `24.19.0` (`.nvmrc`; `engines.node` floor is `>=22`, set by better-sqlite3)
+- Node `24.19.0` (`.nvmrc`; `engines.node` floor is `>=22.18`)
+  - The floor is set by Node's type stripping, not by better-sqlite3's `>=22`:
+    the unit suite is `.mts` loaded directly by `node --test`, and below 22.18
+    it fails with an opaque syntax error. `.npmrc` sets `engine-strict=true`
+    so `pnpm install` refuses instead.
 - pnpm `11.21.0` (`packageManager`; `corepack enable` activates it)
 
 ```bash
 nvm use
 corepack enable
 pnpm install
+pnpm exec playwright install chromium   # once; `pnpm verify` needs a browser
 pnpm dev            # http://localhost:3000
 ```
 
@@ -26,8 +31,11 @@ target — by design.
 | `pnpm start` | Serves a production build (after `pnpm build`). |
 | `pnpm lint` | ESLint, including the core dependency rule. |
 | `pnpm typecheck` | `tsc --noEmit` on TypeScript 5.9.3. |
-| `pnpm build` | `clean:probes` → `lint` → `typecheck` → `verify:boundaries` → `next build`. Next 16 has no `next lint`, so the build chains every check explicitly. |
-| `pnpm verify:boundaries` | Proves the core dependency rule still fires on every violation class. |
+| `pnpm test` | The Node unit suite (`tests/**/*.test.mts`). An empty suite is a hard failure. |
+| `pnpm test:e2e` | Playwright against a served production build, then records the freshness marker. The only thing that observes rendered output — font faces, colour tokens, layout. Needs `playwright install chromium` and a current `pnpm build`. |
+| `pnpm build` | `clean:probes` → `lint` → `typecheck` → `test` → `verify:boundaries` → `next build`. Next 16 has no `next lint`, so the build chains every check explicitly. |
+| `pnpm verify` | `build` → `test:e2e`. The full gate; `build` alone never renders the app. Runs the build with the e2e freshness gate off, since that gate is what the e2e run satisfies. |
+| `pnpm verify:boundaries` | Proves the core dependency rule still fires on every violation class, pins the `build` chain and every script body it names, and fails the build when the e2e suite has not run against the current sources. |
 | `pnpm clean:probes` | Clears a boundary probe left behind by a killed `verify:boundaries` run. |
 
 ## Layout
@@ -36,7 +44,11 @@ target — by design.
 core/         # ports · canon · pipeline · validation · diff · scoring · gates
 adapters/     # boards · ats · model · render · db
 app/          # App Router; api/ is the composition root
-components/   # resume-document
+components/   # resume-document · top-bar
+tests/        # Node unit suite (*.test.mts) — outside core/, which bans node:test
+e2e/          # Playwright specs; the only suite that renders the app
+scripts/      # build-chain gates: boundaries, unit runner, e2e freshness, verify
+tools/        # boundary fixtures — deliberate violations the guardrail must catch
 data/         # gitignored — canon, SQLite, logs
 out/          # gitignored — rendered PDFs
 ```

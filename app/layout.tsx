@@ -10,9 +10,14 @@ import "./globals.css";
 // face on purpose: the design constrains type to exactly 400/600/800, and
 // loading only those three makes the constraint physical. No italic is loaded —
 // the design system loads none.
+//
+// latin-ext is carried for the canon, not for the UI: employer and candidate
+// names take accented characters that the latin subset alone would render
+// mid-string in the fallback face. It does not cover the design's ← (U+2190)
+// or ✓ (U+2713) — no Google subset does; see deferred-work.md.
 const archivo = Archivo({
   weight: ["400", "600", "800"],
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext"],
   display: "swap",
   variable: "--font-archivo",
 });

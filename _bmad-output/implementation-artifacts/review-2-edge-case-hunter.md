@@ -1,0 +1,22 @@
+# Review layer 2 — Edge Case Hunter
+
+*Context-free subagent following `review-prompts/edge-case-hunter.md`. Story 1.3, review round 2. Baseline `4a09ce8`, working tree. Each entry: trigger condition -> potential consequence, with a guard sketch.*
+
+| Location | Trigger condition | Potential consequence | Guard sketch |
+|---|---|---|---|
+| `app/globals.css:216` | Focus ring moved outside `.seg-opt` while parent `.seg` sets `overflow: hidden` | Ancestor clips the ring's top/bottom/outer edges; checked segment still shows no focus cue | `.seg { overflow: visible }`, or keep `-2px` and switch the ring to `var(--color-bg)` when checked |
+| `components/top-bar/top-bar.module.css:34` | Bar clips overflow while the global focus ring sits at `outline-offset: 2px` | Any focusable control Epic 2 adds to the bar loses its visible focus ring | `overflow: clip; overflow-clip-margin: 4px` |
+| `top-bar.module.css:34`, `e2e/top-bar.spec.ts:57-61` | Counts or boards label exceed the bar width; content silently clipped | Boards label and later counts vanish at narrow widths with nothing detecting it | `await expect(page.locator(BAR).getByText('no boards yet')).toBeInViewport()` |
+| `e2e/top-bar.spec.ts:44-56` | Only the zero state is ever rendered or measured | Epic 2's real multi-digit counts could overflow or grow the bar undetected | A fixture route rendering `{ discovered: 1234, ... }` and re-asserting 39px |
+| `e2e/top-bar.spec.ts:29-38` | Filter excludes only `hidden` and `SCRIPT`; other non-visual body children unhandled | A framework-injected style/template/announcer element makes `rendered[0]` fail spuriously | `const skip = new Set(['SCRIPT','STYLE','LINK','TEMPLATE','NOSCRIPT'])` |
+| `e2e/top-bar.spec.ts:8,113` | `header:has-text('tailor')` matches any future second header containing that substring | Playwright strict-mode violation breaks all nine tests when a page adds a header | `const BAR = 'body > header'` |
+| `e2e/top-bar.spec.ts:118-124` | `document.fonts` read immediately after load, no `document.fonts.ready` await | Race against font-face registration makes the only loaded-face check intermittently fail | `await page.evaluate(() => document.fonts.ready)` |
+| `playwright.config.ts:28` | `reuseExistingServer` true outside CI; a stale listener on 3100 is reused | `pnpm verify` tests an old build; the fresh build is never rendered | `reuseExistingServer: false` |
+| `playwright.config.ts:18` | `forbidOnly` gated on `CI`, which the spec states does not exist | A stray `test.only` silently skips the whole e2e suite and exits 0 | `forbidOnly: true` |
+| `scripts/verify-boundaries.mjs:506-519` | Chain regexes pin script *names* only, never the `test` / `test:e2e` bodies | `"test": "true"` satisfies both chains while every check disappears — the documented failure mode | Assert `pkg.scripts.test === 'node scripts/run-tests.mjs'` and `pkg.scripts['test:e2e'] === 'playwright test'` |
+| `scripts/run-tests.mjs:20` | `tests/` missing or renamed makes `readdirSync` throw ENOENT unguarded | Raw stack trace instead of the explicit failure this wrapper exists to produce | try/catch around `readdirSync`, then the crafted message and `exit(1)` |
+| `scripts/run-tests.mjs:33-36` | `result.error` and signal termination never inspected; only `status` is read | Spawn failure or SIGKILL exits 1 with no diagnostic, read as test failure | Check `result.error` and `result.signal` explicitly |
+| `package.json:6-8` | `engines.node >=22.18` enforced by nothing — no engine-strict, no runtime check | Node 22.0–22.17 fails `pnpm test` with an opaque type-stripping syntax error | A version guard in `run-tests.mjs`, or `.npmrc` with `engine-strict=true` |
+| `app/layout.tsx:37-43`, `labels.ts:22,33` | Schema throw fires inside the root layout; no `global-error.tsx` exists | One bad count blanks every route with an unstyled Next error page | `app/global-error.tsx` exporting a `GlobalError({ error, reset })` boundary |
+| `deferred-work.md:60-61` | Deferred `.seg-opt` focus defect struck through as closed by correction 7 | A recorded accessibility defect is retired while still fully present | Reopen the entry: the `+2px` ring is clipped by `.seg { overflow: hidden }` |
+| `spec-1-3-...md:30,48,85,114` | Spec 1.3 claims six deltas; the same diff raises `globals.css` to eight | 1.3's diffability verification command expects six hunks and fails against the shipped file | Reconcile "six deltas" in Boundaries, Code Map, Change Log, and Verification |

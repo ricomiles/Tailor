@@ -13,11 +13,11 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/run-tests.mjs",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test && node scripts/e2e-gate.mjs --record",
     "clean:probes": "node scripts/clean-probes.mjs",
     "verify:boundaries": "node scripts/verify-boundaries.mjs",
     "build": "pnpm clean:probes && pnpm lint && pnpm typecheck && pnpm test && pnpm verify:boundaries && next build",
-    "verify": "pnpm build && pnpm test:e2e"
+    "verify": "node scripts/verify.mjs"
   },
   "dependencies": {
     "better-sqlite3": "13.0.3",

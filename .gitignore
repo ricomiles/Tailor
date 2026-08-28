@@ -57,3 +57,7 @@ __boundary-probe.*
 /test-results
 /playwright-report
 /blob-report
+
+# The Playwright freshness marker (scripts/e2e-gate.mjs) — a hash of the
+# sources the e2e suite observes, rewritten on every passing run.
+/.e2e-verified
