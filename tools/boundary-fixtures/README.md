@@ -11,20 +11,33 @@ re-export forms (`export … from` and `export * from`), a relative escape whose
 target does not resolve at all, escapes into unclassified directories by both
 relative and alias form, and the UI/state runtime (`react`, `zustand`).
 
-Two further classes need no import at all, so no import rule could ever have
+Three further classes need no import at all, so no import rule could ever have
 caught them. `Response` is a global — `throw new Response("x", { status: 400 })`
 inside `core/` satisfied every other rule in this file.
+
+One fixture per shape, and the shape is the AST position rather than the idea:
+two spellings that reach the rule down different branches are two fixtures, so
+either branch going dead turns exactly one fixture red.
 
 - **An HTTP response built under `core/`** — construction with and without
   `new`, a static call (`Response.json`), a `Response` type annotation, the
   ambient `NextResponse` form, an alias (`const Aliased = Response`), the
-  binding spelled around entirely (`globalThis.Response`, both dotted and
-  bracketed, and destructured), a subclass, and an `instanceof` test. One fixture per shape:
-  every one of them is an AST node the rule can stop visiting on its own.
+  binding spelled around entirely (`globalThis.Response` dotted, bracketed and
+  backticked, and destructured), a subclass, and an `instanceof` test.
 - **An HTTP status carried under `core/`** — `statusCode` / `httpStatus` /
   `statusText` unconditionally, as an object property, a computed string key, a
-  class field, a type member and a member access; plus a `status` whose value is
-  a number in 100–599, as a property and as an assignment.
+  backticked computed key, a class field, a private class field, a type member,
+  a type method, an accessor, a constructor parameter property, a bare binding
+  and a member access; plus a `status` whose value is a number in 100–599, as a
+  property, an assignment (dotted and bracketed), a class field, a type member
+  and a union of literals.
+- **A disable comment inside `core/`** — `inline-config-bypass.ts` carries a
+  `// eslint-disable-next-line` above a violating construct and is still
+  rejected. It is the one bypass that would silence every AD-1 rule at once, and
+  the only fixture expected to emit a warning: ESLint's unruled "has no effect
+  because you have 'noInlineConfig'" notice, which `verify-boundaries.mjs`
+  requires to appear at least once. Asserting the flag's presence in the
+  resolved config is not the same as watching a real directive be ignored.
 
 The clean counterparts are what stop an over-broad rule from silently narrowing
 what the core may do:
@@ -42,6 +55,8 @@ what the core may do:
   where that clause could actually regress: a domain number outside the HTTP
   range (`{ status: 7 }`), an unconstrained `z.number()`, and a `status: number`
   type member.
+- `clean-out-of-range-status.ts` — the edges of that range, `99` and `600`. An
+  off-by-one in the range test is invisible without them.
 
 Each file declares its own expectation on line 1:
 

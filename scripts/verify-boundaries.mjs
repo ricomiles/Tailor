@@ -153,6 +153,12 @@ const REQUIRED_ROWS = {
   "HTTP response built in core (Next form)": "NextResponse",
   "HTTP status carried in core (unconditional name)": "statusCode",
   "HTTP status carried in core (numeric status literal)": "status",
+  // The other two unconditional names. Both were reachable by the rule and
+  // exercised by nothing: narrowing the set to ["statusCode"] left every
+  // fixture, probe and row green, which is precisely the rot these rows exist
+  // to catch.
+  "HTTP status carried in core (name: httpStatus)": "httpStatus",
+  "HTTP status carried in core (name: statusText)": "statusText",
 };
 
 const failures = [];
@@ -216,6 +222,31 @@ const PROBES = [
     mechanism: "tailor/no-http-status-in-core (numeric status literal form)",
     specifier: "status",
     body: (specifier) => `export const refused = { ${specifier}: 404 };\n`,
+  },
+  {
+    // Both Response probes above fire through the `Identifier` visitor, so the
+    // two clauses the rule's own comment argues hardest for — the binding
+    // spelled around entirely — were proven against fixtures only, never
+    // against the real core/ tree the Suggested Review Order claims for them.
+    mechanism: "tailor/no-http-response-in-core (global lookup form)",
+    specifier: "Response",
+    body: (specifier) => `export const grabbed: unknown = globalThis.${specifier};\n`,
+  },
+  {
+    mechanism: "tailor/no-http-response-in-core (destructured form)",
+    specifier: "Response",
+    body: (specifier) =>
+      `const { ${specifier}: Grabbed } = globalThis;\n` +
+      `export const grabbed: unknown = Grabbed;\n`,
+  },
+  {
+    // The accessor position: the shape an Error subclass actually reaches for,
+    // and the one the visitor set missed entirely until this review.
+    mechanism: "tailor/no-http-status-in-core (accessor form)",
+    specifier: "statusCode",
+    body: (specifier) =>
+      `export class Refused extends Error {\n` +
+      `  get ${specifier}(): number {\n    return 404;\n  }\n}\n`,
   },
 ].map((probe, index) => ({
   ...probe,
@@ -321,6 +352,21 @@ if (fixtureFiles.length === 0) {
   process.exit(1);
 }
 
+/**
+ * ESLint's own unruled notice that a disable directive did nothing, emitted
+ * because the core block sets `noInlineConfig`. It is a *warning*, and every
+ * other warning fails its fixture — which is why the inline-config bypass was
+ * the one violation class the story shipped with no fixture at all.
+ *
+ * Tolerated here, and required below: the notice cannot be produced by a
+ * boundary rule, so its presence is itself the proof that `noInlineConfig` is
+ * behaviourally live rather than merely present in the resolved config.
+ */
+const isInlineConfigNotice = (m) =>
+  m.severity === 1 && m.ruleId === null && m.message.includes("noInlineConfig");
+
+let inlineConfigNoticeSeen = false;
+
 const eslint = new ESLint({ cwd: ROOT, ignore: false });
 const results = await eslint.lintFiles([FIXTURE_GLOB]);
 const byPath = new Map(results.map((r) => [r.filePath, r]));
@@ -342,7 +388,10 @@ for (const file of fixtureFiles) {
   }
 
   const errors = result.messages.filter((m) => m.severity === 2);
-  const warnings = result.messages.filter((m) => m.severity === 1);
+  const warnings = result.messages.filter(
+    (m) => m.severity === 1 && !isInlineConfigNotice(m),
+  );
+  if (result.messages.some(isInlineConfigNotice)) inlineConfigNoticeSeen = true;
   const describe = (m) => `[${m.ruleId}] ${m.message}`;
 
   if (warnings.length > 0) {
@@ -406,6 +455,20 @@ for (const file of fixtureFiles) {
       break;
     }
   }
+}
+
+// The inline-config bypass, asserted as behaviour rather than as a setting.
+// `calculateConfigForFile` below still pins `noInlineConfig: true`, but that
+// only proves the flag is *present*: an ESLint semantics change, or the core
+// block being re-scoped so these files no longer carry its `linterOptions`,
+// would leave that assertion green with the guardrail wide open. The notice is
+// emitted only when a real disable directive was really ignored.
+if (!inlineConfigNoticeSeen) {
+  fail(
+    "No fixture exercised the inline-config bypass. `inline-config-bypass.ts` should carry a " +
+      "`// eslint-disable-next-line` above a violating construct and still be rejected; ESLint's " +
+      "\"has no effect because you have 'noInlineConfig'\" notice is what proves the flag is live.",
+  );
 }
 
 // ---------------------------------------------------------------------------

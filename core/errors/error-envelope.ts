@@ -45,8 +45,37 @@ export type ErrorCode = z.infer<typeof errorCodeSchema>;
  */
 export const errorEnvelopeSchema = z.object({
   code: errorCodeSchema,
-  message: z.string().min(1),
+  // `.trim()` before `.min(1)`: `"   "` satisfies a bare `min(1)` and would
+  // reach a client as a blank message. The translator trims on its own, but
+  // this schema is the contract every *other* consumer parses through, and it
+  // has to hold on its own terms.
+  message: z.string().trim().min(1),
   stage: pipelineStageSchema.optional(),
 });
 
 export type ErrorEnvelope = z.infer<typeof errorEnvelopeSchema>;
+
+/**
+ * What the envelope says when the thrower supplied no message.
+ *
+ * Epic 1 requires an error to state what happened and what to do; a generic
+ * `"(no message given)"` states neither, and silently blames the reader for a
+ * thrower that passed an empty string. One sentence per code, and no more than
+ * the three codes above — this is not a taxonomy, it is the floor beneath one.
+ *
+ * Parsed rather than asserted, the way `pipeline-counts.ts` does it: `z.record`
+ * over the code enum is exhaustive, so adding a code without writing its
+ * sentence fails here at module load rather than shipping a blank message.
+ */
+export const DEFAULT_MESSAGE_BY_CODE = Object.freeze(
+  z.record(errorCodeSchema, z.string().trim().min(1)).parse({
+    // Keyed off the constant, never the literals — the same single-declaration
+    // rule that governs the codes themselves.
+    [ERROR_CODES.invalidRequest]:
+      "The request was not valid. Check the fields you sent and try again.",
+    [ERROR_CODES.notFound]:
+      "That resource does not exist. Check the identifier and try again.",
+    [ERROR_CODES.internal]:
+      "The server could not complete the request. Retry, and if it keeps failing check the server log for the failing stage.",
+  }),
+);

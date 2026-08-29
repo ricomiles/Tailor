@@ -4,12 +4,14 @@ import { z } from "zod";
 // extensionless specifiers. `app/api/` is the composition root, so importing
 // inward from `core/` is the permitted direction (AD-1).
 import {
+  DEFAULT_MESSAGE_BY_CODE,
   ERROR_CODES,
   errorCodeSchema,
   errorEnvelopeSchema,
   type ErrorEnvelope,
 } from "../../core/errors/error-envelope.ts";
 import { isTailorError } from "../../core/errors/tailor-error.ts";
+import { pipelineStageSchema } from "../../core/pipeline/pipeline-stages.ts";
 
 /**
  * The only place in the repo where an error acquires an HTTP shape.
@@ -47,6 +49,11 @@ const HTTP_STATUS_BY_CODE = Object.freeze(
   }),
 );
 
+/** The single exit. Every return below goes through it, so the status can
+ * never disagree with the code it was derived from. */
+const respond = (envelope: ErrorEnvelope): Response =>
+  Response.json(envelope, { status: HTTP_STATUS_BY_CODE[envelope.code] });
+
 /**
  * Deliberately not a catch-all. `notFound()`, `redirect()`, `unauthorized()`
  * and `forbidden()` all signal *by throwing*, so a translator that enveloped
@@ -58,7 +65,12 @@ const HTTP_STATUS_BY_CODE = Object.freeze(
  * The other half of the contract is totality: a recognised error *always*
  * produces a well-formed envelope. Throwing out of this function would hand
  * Next its own 500 HTML and the client would get no envelope at all — the one
- * outcome "one error envelope everywhere" exists to rule out.
+ * outcome "one error envelope everywhere" exists to rule out. That is enforced
+ * structurally rather than argued: every field recognition does not validate is
+ * filtered here, the parse is a `safeParse`, and the failure arm still answers
+ * with an envelope. A malformed `stage` costs the caller its stage, never its
+ * envelope — the frozen matrix's "throw at the boundary" governs *parsing* an
+ * inbound envelope, not this translator emitting one.
  *
  * The return type is the web `Response`, which a future caller may satisfy with
  * a `NextResponse` — that is a subclass, so widening never has to happen here.
@@ -70,17 +82,34 @@ export function toErrorResponse(error: unknown): Response {
 
   // `new Error()` defaults its message to `""` and the envelope requires a
   // non-empty one, so an adapter throwing `new TailorError(code, "")` would
-  // otherwise fail the parse below and escape as a ZodError.
-  const message = error.message.trim();
+  // otherwise fail the parse below and escape as a ZodError. The substitute is
+  // a real sentence per code rather than a shrug: an error that says nothing is
+  // the vagueness the epic's copy rule exists to forbid.
+  const given = error.message.trim();
+  const message = given === "" ? DEFAULT_MESSAGE_BY_CODE[error.code] : given;
 
-  // Parsed, not asserted: the envelope leaves this function only if the schema
-  // accepts it, so a half-formed body can never reach a client. `stage` is
-  // omitted rather than set to undefined, so the key is absent from the JSON.
-  const envelope: ErrorEnvelope = errorEnvelopeSchema.parse({
+  // `stage` is the one field `isTailorError` does not validate — recognition
+  // turns on the brand, the code and the message — so a value that crossed a
+  // realm, or a `row.stage as PipelineStage` off a database, can carry a stage
+  // the runner has never heard of. Filtering it here rather than trusting it
+  // keeps a wrong *stage* from costing the client the whole *envelope*; an
+  // unparseable one is dropped, and the key is absent rather than null.
+  const stage = pipelineStageSchema.safeParse(error.stage);
+
+  const parsed = errorEnvelopeSchema.safeParse({
     code: error.code,
-    message: message === "" ? `${error.code} (no message given)` : message,
-    ...(error.stage === undefined ? {} : { stage: error.stage }),
+    message,
+    ...(stage.success ? { stage: stage.data } : {}),
   });
+  if (parsed.success) return respond(parsed.data);
 
-  return Response.json(envelope, { status: HTTP_STATUS_BY_CODE[envelope.code] });
+  // Unreachable given what `isTailorError` currently guarantees, and kept
+  // anyway: totality is the contract this module advertises, and it must not
+  // rest on a predicate in another file staying exactly as strict as it is
+  // today. Widening recognition should cost a caller its `stage`, never its
+  // envelope.
+  return respond({
+    code: ERROR_CODES.internal,
+    message: DEFAULT_MESSAGE_BY_CODE[ERROR_CODES.internal],
+  });
 }

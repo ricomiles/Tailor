@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { toErrorResponse } from "../app/api/to-error-response.ts";
 import {
+  DEFAULT_MESSAGE_BY_CODE,
   ERROR_CODES,
   errorEnvelopeSchema,
 } from "../core/errors/error-envelope.ts";
@@ -201,7 +202,7 @@ test("an empty message still yields a well-formed envelope, never a throw", asyn
   assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), {
     code: "internal",
-    message: "internal (no message given)",
+    message: DEFAULT_MESSAGE_BY_CODE[ERROR_CODES.internal],
   });
 });
 
@@ -212,7 +213,7 @@ test("a whitespace-only message is treated as empty rather than emitted", async 
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), {
     code: "invalid-request",
-    message: "invalid-request (no message given)",
+    message: DEFAULT_MESSAGE_BY_CODE[ERROR_CODES.invalidRequest],
   });
 });
 
@@ -280,4 +281,97 @@ test("a non-Error throw is rethrown untouched too", () => {
     () => toErrorResponse(thrownValue),
     (thrown: unknown) => thrown === thrownValue,
   );
+});
+
+// ---------------------------------------------------------------------------
+// Totality. Added by the 2026-08-29 code review: `isTailorError` validates the
+// brand, the code and the message but never the stage, so a recognised error
+// could still fail the envelope parse and escape as a ZodError — the one
+// outcome the translator's own doc comment says it exists to rule out.
+// ---------------------------------------------------------------------------
+
+test("a whitespace-only message does not satisfy the envelope contract", () => {
+  const result = errorEnvelopeSchema.safeParse({
+    code: ERROR_CODES.internal,
+    message: "   ",
+  });
+  assert.equal(result.success, false);
+  assert.deepEqual(result.error?.issues[0]?.path, ["message"]);
+});
+
+test("a message is trimmed by the schema, not just by the translator", () => {
+  const envelope = errorEnvelopeSchema.parse({
+    code: ERROR_CODES.internal,
+    message: "  chromium exited  ",
+  });
+  assert.equal(envelope.message, "chromium exited");
+});
+
+test("an empty message becomes that code's sentence, not a shrug", async () => {
+  for (const code of Object.values(ERROR_CODES)) {
+    const body = await toErrorResponse(new TailorError(code, "")).json();
+    assert.equal(body.message, DEFAULT_MESSAGE_BY_CODE[code]);
+    assert.doesNotMatch(
+      body.message,
+      /no message given/,
+      "the fallback must state what happened and what to do",
+    );
+  }
+});
+
+test("a recognised error with an unparseable stage still yields an envelope", async () => {
+  const cases: readonly unknown[] = [
+    // A real instance whose stage was cast in — `row.stage as PipelineStage`
+    // off a database is the realistic route.
+    new TailorError(ERROR_CODES.internal, "chromium died", {
+      stage: "upload-to-ats" as PipelineStage,
+    }),
+    // The branded cross-realm path, which validates neither.
+    { isTailorError: true, code: "internal", message: "chromium died", stage: "nope" },
+    { isTailorError: true, code: "internal", message: "chromium died", stage: null },
+  ];
+  for (const value of cases) {
+    const response = toErrorResponse(value);
+    const body = await response.json();
+    assert.equal(errorEnvelopeSchema.safeParse(body).success, true);
+    assert.equal("stage" in body, false, "an unparseable stage is dropped, not nulled");
+    assert.equal(body.code, "internal");
+  }
+});
+
+test("every code maps to a real HTTP status, never a defaulted 200", async () => {
+  for (const code of Object.values(ERROR_CODES)) {
+    const response = toErrorResponse(new TailorError(code, "boom"));
+    assert.notEqual(
+      response.status,
+      200,
+      `'${code}' has no status mapping — Response.json defaults to 200 and would ship an error body as success`,
+    );
+    assert.ok(Number.isInteger(response.status));
+    assert.ok(response.status >= 100 && response.status <= 599);
+  }
+});
+
+test("a TailorError subclass is recognised and enveloped like its parent", async () => {
+  class CanonMissing extends TailorError {
+    constructor() {
+      super(ERROR_CODES.notFound, "no canon on disk", { stage: "match-canon" });
+    }
+  }
+  const response = toErrorResponse(new CanonMissing());
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), {
+    code: "not-found",
+    message: "no canon on disk",
+    stage: "match-canon",
+  });
+});
+
+test("the envelope strips keys it does not declare", () => {
+  const envelope = errorEnvelopeSchema.parse({
+    code: ERROR_CODES.internal,
+    message: "boom",
+    statusCode: 500,
+  });
+  assert.deepEqual(Object.keys(envelope).sort(), ["code", "message"]);
 });

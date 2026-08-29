@@ -15,10 +15,15 @@ import boundaries from "eslint-plugin-boundaries";
  * port interfaces it defines. (`zod` is deliberately allowed: the architecture
  * requires every cross-unit type declared once in the core as a named schema.)
  *
- * Six mechanisms. Four cover the shapes a module reference can take, because no
+ * Six *rules*. Four cover the shapes a module reference can take, because no
  * one of them covers every shape; two more cover the outward leak that needs no
  * import at all — `Response` is a global, so `throw new Response("x", { status:
  * 400 })` under core/ satisfied every import rule below.
+ *
+ * "Rules" here, never "mechanisms": `scripts/verify-boundaries.mjs` reports a
+ * count of *mechanisms* and means its probes, of which there are more than one
+ * per rule. One word carrying both senses across two files is how the two
+ * numbers came to disagree while both were correct.
  *
  *  - `tailor/no-outward-relative-reference` resolves every *relative*
  *    specifier against the repo-root `core/` directory and rejects any that
@@ -319,7 +324,23 @@ const HTTP_RESPONSE_NAMES = new Set(["Response", "NextResponse"]);
  * Shadowing `Response` with a local binding is not itself a leak; using it is.
  */
 function isDeclarationName(node, parent) {
+  // Tested before the switch, not in its `default:` arm. A parameter's parent
+  // *is* the function node, so `case "FunctionDeclaration"` below answers
+  // `parent.id === node` first and the params test never runs — which made
+  // `function shadow(Response: string)` fail the build on the binding itself,
+  // the exact opposite of what this helper's contract says.
+  if (Array.isArray(parent.params) && parent.params.includes(node)) return true;
   switch (parent.type) {
+    // Binding positions inside a destructuring or catch clause. Each introduces
+    // a name the same way `const Response = …` does.
+    case "CatchClause":
+      return parent.param === node;
+    case "ArrayPattern":
+      return parent.elements.includes(node);
+    case "RestElement":
+      return parent.argument === node;
+    case "AssignmentPattern":
+      return parent.left === node;
     case "VariableDeclarator":
     case "ClassDeclaration":
     case "ClassExpression":
@@ -486,7 +507,16 @@ function staticKeyName(node) {
   const key = node.key ?? node.property;
   if (!key) return null;
   if (key.type === "Literal" && typeof key.value === "string") return key.value;
+  // A no-substitution template is as statically readable as the quoted form.
+  // Leaving it out meant one backtick — `globalThis[`Response`]`, or
+  // ``{ [`statusCode`]: 500 }`` — reopened the bypass the string-literal case
+  // above was added to close.
+  if (key.type === "TemplateLiteral" && key.expressions.length === 0)
+    return key.quasis[0].value.cooked;
   if (!node.computed && key.type === "Identifier") return key.name;
+  // `#statusCode` is a member like any other; the private marker changes who
+  // may read it, not whether it carries an HTTP status.
+  if (!node.computed && key.type === "PrivateIdentifier") return key.name;
   return null;
 }
 
@@ -506,6 +536,11 @@ function numericLiteralValue(node) {
   if (!node) return null;
   if (node.type === "Literal") return typeof node.value === "number" ? node.value : null;
   if (node.type === "TSLiteralType") return numericLiteralValue(node.literal);
+  // `status: 404 | 500` fixes an HTTP status just as firmly as `status: 404`.
+  // The first HTTP-range member is enough to report; naming which one is not
+  // the point.
+  if (node.type === "TSUnionType")
+    return node.types.map(numericLiteralValue).find(isHttpStatusNumber) ?? null;
   if (node.type === "TSTypeAnnotation") return numericLiteralValue(node.typeAnnotation);
   if (
     node.type === "TSAsExpression" ||
@@ -577,6 +612,55 @@ const noHttpStatusInCore = {
       },
       MemberExpression(node) {
         checkName(node, staticKeyName(node), "member access");
+      },
+      /**
+       * A getter is how an `Error` subclass most naturally exposes a status,
+       * and it was the one shape the visitor set never reached — `get
+       * statusCode()` linted clean while `statusCode = 404` did not.
+       */
+      MethodDefinition(node) {
+        const name = staticKeyName(node);
+        if (checkName(node, name, `${node.kind === "method" ? "method" : node.kind + "ter"}`))
+          return;
+        if (
+          name === "status" &&
+          isHttpStatusNumber(numericLiteralValue(node.value?.returnType))
+        )
+          report(node, name, "a `status` accessor returning an HTTP status number");
+      },
+      TSMethodSignature(node) {
+        const name = staticKeyName(node);
+        if (checkName(node, name, "type method")) return;
+        if (name === "status" && isHttpStatusNumber(numericLiteralValue(node.returnType)))
+          report(node, name, "a `status` type method returning an HTTP status number");
+      },
+      /**
+       * `constructor(readonly statusCode: number)` declares a field without
+       * ever producing a `PropertyDefinition`, so it walked past both clauses.
+       */
+      TSParameterProperty(node) {
+        const target = node.parameter;
+        const id = target?.type === "AssignmentPattern" ? target.left : target;
+        const name = id?.type === "Identifier" ? id.name : null;
+        if (checkName(node, name, "parameter property")) return;
+        if (name === "status" && isHttpStatusNumber(numericLiteralValue(id?.typeAnnotation)))
+          report(node, name, "a `status` parameter property fixed to an HTTP status number");
+      },
+      /**
+       * A bare binding is the same leak one step before it becomes a member:
+       * `const statusCode = 500` under core/ is an HTTP status by any reading,
+       * and it linted clean while `{ statusCode: 500 }` did not.
+       */
+      VariableDeclarator(node) {
+        const name = node.id?.type === "Identifier" ? node.id.name : null;
+        if (checkName(node, name, "binding")) return;
+        if (
+          name === "status" &&
+          isHttpStatusNumber(
+            numericLiteralValue(node.init) ?? numericLiteralValue(node.id?.typeAnnotation),
+          )
+        )
+          report(node, name, "a `status` binding whose value is an HTTP status number");
       },
       AssignmentExpression(node) {
         const { left, right } = node;

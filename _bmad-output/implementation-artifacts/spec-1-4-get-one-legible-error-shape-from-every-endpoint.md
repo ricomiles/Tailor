@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-08-28'
 status: 'done'
 baseline_commit: 'a5e5b74337df4ca0488568f1b175e1aa0c431d7d'
-review_loop_iteration: 0
+review_loop_iteration: 1
 context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 ---
 
@@ -51,7 +51,7 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 - `core/errors/` -- new. The envelope schema, the code union, and the typed error. Only `zod` may be imported (AD-1).
 - `core/pipeline/pipeline-stages.ts` -- new. AD-4's six stages in order, as a frozen tuple of slugs plus its named schema and inferred type. `run_steps.ordinal` is the 1-based index; `slug` is identity. Epic 3's runner imports this rather than restating it (AD-16).
 - `core/pipeline/pipeline-counts.ts` -- **read-only, the pattern to follow.** Named schema, `z.infer` type, `Object.freeze` on the derived constant, and the comment convention explaining why the declaration is single.
-- `app/api/` -- currently `.gitkeep` only. The translator lands here as a plain module, **not** a `route.ts`. Next 16: `Response.json(body, init)` needs no `next/server` import, and typing the return as `Response` still accepts a `NextResponse` from a future caller.
+- `app/api/` -- holds `to-error-response.ts` and nothing else. (Before this story it was a `.gitkeep` placeholder; that placeholder was removed once the directory held a real file.) The translator lands here as a plain module, **not** a `route.ts`. Next 16: `Response.json(body, init)` needs no `next/server` import, and typing the return as `Response` still accepts a `NextResponse` from a future caller.
 - `eslint.config.mjs` -- **edited.** `AD1`/`AD1_DEFERRED` message constants at L117; `noDeferredModuleLoading` at L213 is the template — purely syntactic, no path resolution, and its `report()` helper shows the sentinel-token convention for a subject with no literal, and its `Identifier` visitor is the precedent for catching a *reference* rather than a construct — which is what closes the aliasing escape. Register in the `tailor` plugin at L592, wire in the `coreBoundary` block at L602. *(Anchors re-measured 2026-08-28 after this story landed; the two new rules sit at L411 and L533.)* Parser has **no type information** (`project`/`projectService` both undefined), so every check must be syntactic.
 - `eslint.config.mjs` L602 -- the `coreBoundary` block (`linterOptions` at L623). Add `linterOptions: { noInlineConfig: true, reportUnusedDisableDirectives: "error" }`: today one `// eslint-disable-next-line` in real `core/` silences the whole AD-1 family and nothing goes red.
 - `scripts/verify-boundaries.mjs` -- **edited, four lockstep sites.** `BOUNDARY_RULES` L93 (required, or the fixture is not accepted), `REQUIRED_CORE_RULES` L102 (which also asserts `linterOptions.noInlineConfig`, at L457), `REQUIRED_ROWS` L115 (one row per *clause*), `PROBES` L175 (a probe per clause, asserted on the **quoted** sentinel — `Response` is a substring of `NextResponse`). Acceptance requires the sentinel to appear single-quoted in the message.
@@ -79,7 +79,57 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 - Given a `// eslint-disable-next-line` comment against a `tailor/*` rule inside `core/`, when I run `pnpm build`, then it fails rather than silencing the guardrail.
 - Given the translator and a framework signal from `notFound()` or `redirect()`, when the signal reaches it, then it is rethrown unchanged and never becomes an envelope.
 
+### Review Findings
+
+*Round 1 — code review 2026-08-29. Both decision items resolved by miles on 2026-08-29 and rewritten as patches. Four layers: blind-hunter, edge-case-hunter, verification-gap, acceptance-auditor. Every claim below was reproduced by execution or by mutation before being recorded; reviewer claims that did not reproduce were dropped.*
+
+- [x] [Review][Patch] **Totality contract vs. the malformed-envelope matrix row** *(decided 2026-08-29: make the translator total — `safeParse`, retry without `stage`, fall back to an `internal` envelope; the matrix's "throw at the boundary" governs parsing an inbound envelope, not the translator)* — `isTailorError` validates `code` and `message` but never `stage`, so a recognised error carrying an out-of-set or `null` stage passes recognition and dies in `errorEnvelopeSchema.parse`, escaping as a raw `ZodError`. Verified by execution: a branded object with `stage: "upload-to-ats"`, and `new TailorError("internal", "x", { stage: null })`, both throw. The module's own doc claims "a recognised error *always* produces a well-formed envelope"; the frozen I/O matrix says a malformed envelope should "throw at the boundary". Those two contracts collide exactly here and a human must pick which wins. [core/errors/tailor-error.ts:66, app/api/to-error-response.ts:79]
+- [x] [Review][Patch] **Empty-message fallback manufactures the copy the epic forbids** *(decided 2026-08-29: per-code default copy stating what happened and what to do)* — the translator substitutes `` `${code} (no message given)` `` into the envelope's human `message`, producing `internal (no message given)`. Epic 1 requires "errors state what happened and what to do — no apologies, no vagueness". The totality goal is right; the string is a constraint conflict. [app/api/to-error-response.ts:81]
+- [x] [Review][Patch] `no-http-status-in-core` misses accessor, method-signature, parameter-property and private-field positions — `get statusCode()`, `statusCode(): number`, `constructor(readonly statusCode: number)` and `#statusCode = 404` all lint clean under real `core/`, defeating AC 3 and the rule's own "unconditionally" claim [eslint.config.mjs:533]
+- [x] [Review][Patch] `httpStatus` and `statusText` are exercised by no fixture, probe or row — mutation-proven: narrowing the set to `["statusCode"]` leaves `pnpm verify:boundaries` reporting 30 classes / 7 mechanisms, fully green [eslint.config.mjs:470]
+- [x] [Review][Patch] The numeric-`status` class-field and type-member branches are unproven — mutation-proven: killing both branches leaves every fixture, probe and row green [eslint.config.mjs:545]
+- [x] [Review][Patch] No probe for the `globalThis.Response` and destructuring clauses — both `no-http-response-in-core` probes fire through the `Identifier` visitor, so the two clauses the rule's comment argues hardest for are proven against fixtures only, never the real `core/` tree [scripts/verify-boundaries.mjs:175]
+- [x] [Review][Patch] Template-literal computed keys bypass both rules — ``globalThis[`Response`]``, ``holder[`status`] = 404`` and ``{ [`statusCode`]: 500 }`` all lint clean; `staticKeyName` reads string literals but not no-substitution templates, reopening the one-line bypass its own comment says it closed [eslint.config.mjs:484]
+- [x] [Review][Patch] `const statusCode = 500` under `core/` lints clean — there is no `VariableDeclarator` visitor, so the unconditional names are conditional on AST position [eslint.config.mjs:533]
+- [x] [Review][Patch] A `status` typed as a union of HTTP literals (`404 | 500`) escapes the numeric clause — `numericLiteralValue` does not descend into `TSUnionType`, though it handles the single-literal form [eslint.config.mjs:490]
+- [x] [Review][Patch] `isDeclarationName`'s parameter exemption is dead code — `FunctionDeclaration` is matched earlier in the same `switch` and returns `parent.id === node` first, so the `default:` branch never runs; `function shadow(Response: string)` fails the build twice, contradicting the rule's "shadowing is not itself a leak" [eslint.config.mjs:321]
+- [x] [Review][Patch] The envelope schema accepts a whitespace-only message — `z.string().min(1)` passes `"   "`; the translator trims first, but any other consumer parsing through the declared contract does not [core/errors/error-envelope.ts:48]
+- [x] [Review][Patch] AC 5 is asserted as a config value, never exercised as behaviour — `calculateConfigForFile` pins `noInlineConfig: true`, but nothing runs ESLint over a file that actually carries a disable directive; it is the only violation class in the story with no fixture and no probe [scripts/verify-boundaries.mjs:457]
+- [x] [Review][Patch] `HTTP_STATUS_BY_CODE`'s exhaustiveness and freezing are pinned by no test, and the unguarded index would emit a silent 200 with an error body if a mapping were ever lost; also missing: a subclass reaching the translator, extra-key behaviour, and the 99/600 boundary of `isHttpStatusNumber` [app/api/to-error-response.ts:39, tests/error-envelope.test.mts]
+- [x] [Review][Patch] Spec frontmatter `status: 'done'` contradicts `sprint-status.yaml`'s `review` in the same commit — a repeat of the defect class filed against spec 1.2 during story 1.3's review [spec-1-4:5]
+- [x] [Review][Patch] `## Spec Change Log` is empty though the Code Map records "anchors re-measured 2026-08-28 after this story landed" [spec-1-4]
+- [x] [Review][Patch] Code Map's `app/api/` line is stale on arrival — it says "currently `.gitkeep` only" while the same diff adds `to-error-response.ts`; the placeholder is now dead [spec-1-4]
+- [x] [Review][Patch] The fixtures README overstates coverage — it enumerates "a static call (`Response.json`)" for which no fixture exists, and claims "one fixture per shape" while three files each hold two [tools/boundary-fixtures/README.md:17]
+- [x] [Review][Patch] "Mechanisms" carries two senses and two counts in one change — the config header says "Six mechanisms" (rules) while the guardrail prints 7 (probes) [eslint.config.mjs:18, scripts/verify-boundaries.mjs:645]
+- [x] [Review][Defer] Inbound HTTP types are unconstrained under `core/` [eslint.config.mjs:411] — deferred, pre-existing
+- [x] [Review][Defer] `core/errors/` is not in epic-1-context's listed core subdirectories [_bmad-output/implementation-artifacts/epic-1-context.md] — deferred, pre-existing
+- [x] [Review][Defer] Commit `e3aaa18`'s message claims 11 new fixtures; 17 were added [e3aaa18] — deferred, pre-existing
+
+**Dismissed as noise (3):** the `isTailorError` brand being own-enumerable and sharing its name with the predicate (the enumerability is load-bearing for cross-realm recognition — by design); the brand path accepting any duck-typed object (that is what a brand is for — folded into the decision item above); `noInlineConfig` blocking non-`tailor` disables under `core/` (deliberate, and it is what satisfies AC 5 — narrowing it would weaken the guardrail).
+
+
 ## Spec Change Log
+
+- **2026-08-28 — Code Map anchors re-measured.** The `eslint.config.mjs` line
+  numbers cited in the Code Map were captured before the story landed and moved
+  once the two new rules were inserted. Re-measured after the fact; the two new
+  rules sit at L411 and L533.
+- **2026-08-29 — Frozen block reconciled with the translator's contract.** Round
+  1 of code review found the I/O matrix's "Malformed envelope" row ("throw at
+  the boundary") and the translator's own totality claim ("a recognised error
+  *always* produces a well-formed envelope") in direct conflict for one input: a
+  recognised error carrying a `stage` the runner does not have. Resolved by
+  miles in favour of totality — the matrix row governs *parsing* an inbound
+  envelope, the translator never throws on a value it recognised, and an
+  unparseable `stage` is dropped rather than costing the caller its envelope.
+  The matrix row is unchanged; its scope is now stated here.
+- **2026-08-29 — Empty-message copy replaced.** The fallback
+  `"<code> (no message given)"` stated neither what happened nor what to do,
+  which Epic 1's copy rule forbids. Replaced by one sentence per code, declared
+  in `core/errors/error-envelope.ts` as `DEFAULT_MESSAGE_BY_CODE` and parsed
+  exhaustively over the code enum. This is the "Ask First" HTTP-adjacent
+  taxonomy question answered narrowly: three sentences for the three codes that
+  already exist, and no new codes.
 
 ## Design Notes
 
