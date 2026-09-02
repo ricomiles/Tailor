@@ -59,13 +59,10 @@ import { fileURLToPath } from "node:url";
 import { RESOLVE_EXTENSIONS } from "../eslint.config.mjs";
 import { MARKER, observedHash, recordedHash } from "./e2e-gate.mjs";
 import {
-  DRIZZLE_PUSH,
   JOURNAL_FILE,
   MIGRATIONS_DIR,
   PUSH_SCAN_EXEMPT,
-  findPushScripts,
-  journalProblems,
-  missingMigrationFiles,
+  projectInvariantProblems,
 } from "./project-invariants.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -668,79 +665,64 @@ for (const [name, expected] of Object.entries(EXPECTED_SCRIPT_BODIES)) {
 // them against violating inputs. Everything below is the part that needs a
 // filesystem: which files to feed them, and what to say when they fire.
 
-// The acceptance criterion reads "package.json **or any config**", so the scan
-// covers both: every script body, and the bodies of the config and build-chain
-// sources that could invoke the CLI without a `package.json` entry at all.
-const pushOffenders = findPushScripts(pkg.scripts).map(
-  (name) => `package.json's "${name}" script`,
-);
-
+// "Any config" is taken literally: every config and build-chain source at the
+// repo root, plus every script of any extension. An earlier version scanned
+// `drizzle.config.ts` and `scripts/*.mjs` only, which left `next.config.ts`,
+// `playwright.config.ts`, root `eslint.config.mjs` and any future `scripts/*.ts`
+// as places the ban did not reach.
+//
+// The exempt files are the verifier and the module declaring the pattern:
+// naming the forbidden sequence is their job, and scanning them would make the
+// guardrail fire on itself. `PUSH_SCAN_EXEMPT` is exported and asserted short in
+// `tests/project-invariants.test.mts`, because an exemption list is the obvious
+// place to hide a real invocation.
+const PUSH_SCANNABLE = /\.(?:m|c)?[jt]s$/;
 const PUSH_SCANNED_SOURCES = [
-  "drizzle.config.ts",
-  ...readdirSync(join(ROOT, "scripts"))
-    .filter((entry) => entry.endsWith(".mjs"))
-    .map((entry) => `scripts/${entry}`),
+  ...readdirSync(ROOT, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && PUSH_SCANNABLE.test(entry.name))
+    .map((entry) => entry.name),
+  ...readdirSync(join(ROOT, "scripts"), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && PUSH_SCANNABLE.test(entry.name))
+    .map((entry) => `scripts/${entry.name}`),
 ].filter((relative) => !PUSH_SCAN_EXEMPT.includes(relative));
 
+const pushSources = [];
 for (const relative of PUSH_SCANNED_SOURCES) {
-  // The exempt files are this check and the module declaring its pattern:
-  // naming the forbidden sequence is their job, and scanning them would make
-  // the guardrail fire on itself. `PUSH_SCAN_EXEMPT` is exported and asserted
-  // short in `tests/project-invariants.test.mts`, because an exemption list is
-  // the obvious place to hide a real invocation.
-  if (DRIZZLE_PUSH.test(readFileSync(join(ROOT, relative), "utf8"))) {
-    pushOffenders.push(relative);
+  try {
+    pushSources.push({ name: relative, body: readFileSync(join(ROOT, relative), "utf8") });
+  } catch (error) {
+    // A file listed by the directory read and unreadable a moment later is a
+    // real problem, but a raw ENOENT stack from inside a guardrail sends the
+    // reader to this file rather than to theirs.
+    fail(`${relative} could not be scanned for a push invocation (${error.message}).`);
   }
 }
 
-for (const offender of pushOffenders) {
-  fail(
-    `${offender} invokes the drizzle-kit "push" subcommand. Push synchronises a ` +
-      "live database by dropping whatever stands in the way — a column of real " +
-      "posting and run history, in a gitignored file with no backup. Generate a " +
-      "migration with `pnpm db:generate` instead; the startup bootstrap applies it.",
-  );
-}
-
-// ---------------------------------------------------------------------------
-// The migration mechanism is one file, and its absence is silent.
-//
-// `drizzle-orm`'s migrator throws only at *runtime*: a journal damaged here
-// would be discovered by whoever next started the app. It is also the file that
-// makes a migrations directory holding no `.sql` valid, which is the state this
-// epic deliberately ships.
-let journal;
+// The journal is read as text, not parsed here: `projectInvariantProblems` owns
+// every verdict, including "unreadable", so the composition that produces each
+// sentence is the composition `tests/project-invariants.test.mts` exercises.
+let journalText = null;
 try {
-  journal = JSON.parse(readFileSync(join(ROOT, JOURNAL_FILE), "utf8"));
-} catch (error) {
-  fail(
-    `${JOURNAL_FILE} is missing or unreadable (${error.message}). It is the whole ` +
-      "migration mechanism: drizzle-orm throws `Can't find meta/_journal.json " +
-      "file` without it, so the app would not start.",
-  );
+  journalText = readFileSync(join(ROOT, JOURNAL_FILE), "utf8");
+} catch {
+  // Reported by the composed check, which says why it matters.
 }
 
-if (journal !== undefined) {
-  for (const problem of journalProblems(journal)) {
-    fail(
-      `${JOURNAL_FILE} ${problem}. drizzle-orm reads this file at every server ` +
-        "start and drizzle-kit rewrites it on every `pnpm db:generate`; a journal " +
-        "that disagrees with either is a journal from some other project.",
-    );
-  }
-
-  // An entry with no `.sql` beside it is the exact shape of committing the
-  // journal without the migration — half a `pnpm db:generate`. drizzle-orm
-  // reports it as `No file <tag>.sql found`, on the developer's machine, long
-  // after the commit that caused it.
-  for (const path of missingMigrationFiles(journal, (relative) =>
-    existsSync(join(ROOT, relative)),
-  )) {
-    fail(
-      `${JOURNAL_FILE} lists a migration whose file is missing: ${path}. ` +
-        "Commit the generated `.sql` alongside the journal, or drop the entry.",
-    );
-  }
+// This call is the wiring. Everything it decides is covered by unit tests
+// firing violating inputs at the same function; what a test cannot see is
+// whether the *real* inputs are handed over, so `tests/project-invariants.test.mts`
+// pins this call's arguments as a tripwire.
+for (const problem of projectInvariantProblems({
+  scripts: pkg.scripts,
+  sources: pushSources,
+  journalText,
+  exists: (relative) => existsSync(join(ROOT, relative)),
+  listSqlTags: () =>
+    readdirSync(join(ROOT, MIGRATIONS_DIR), { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
+      .map((entry) => entry.name.slice(0, -".sql".length)),
+})) {
+  fail(problem);
 }
 
 // ---------------------------------------------------------------------------
@@ -755,6 +737,11 @@ if (journal !== undefined) {
 //
 // Asserted by importing the modules rather than by matching their source text:
 // a regex over a string literal proves what the file says, not what it does.
+//
+// One `try` each, because they fail for unrelated reasons: a single wrapper
+// reported both files by name whichever one threw, and silently dropped the two
+// `drizzle.config.ts` assertions whenever the *bootstrap* import was the one
+// that failed.
 const expectedMigrationsDir = resolve(ROOT, MIGRATIONS_DIR);
 try {
   const { MIGRATIONS_FOLDER } = await import("../adapters/db/bootstrap.ts");
@@ -765,7 +752,15 @@ try {
         "generated into one and read from the other never runs.",
     );
   }
+} catch (error) {
+  fail(
+    `Could not read MIGRATIONS_FOLDER back from adapters/db/bootstrap.ts ` +
+      `(${error.message}). It must be importable for the three declarations of ` +
+      "that path to be checkable against each other.",
+  );
+}
 
+try {
   const drizzleConfig = (await import("../drizzle.config.ts")).default;
   if (resolve(ROOT, drizzleConfig.out ?? "") !== expectedMigrationsDir) {
     fail(
@@ -782,9 +777,8 @@ try {
   }
 } catch (error) {
   fail(
-    "Could not read the migrations directory back from adapters/db/bootstrap.ts " +
-      `and drizzle.config.ts (${error.message}). Both must be importable for the ` +
-      "three declarations of that path to be checkable against each other.",
+    `Could not read drizzle.config.ts (${error.message}). It must be importable ` +
+      "for `out` and `schema` to be checked against the directory the app reads.",
   );
 }
 
@@ -851,4 +845,13 @@ console.log(
     `${Object.keys(REQUIRED_ROWS).length} violation classes, ` +
     `${PROBES.length} mechanisms proven against the real core/ tree, ` +
     "and a violation in core/ blocks the build.",
+);
+
+// The project invariants report separately and by count. A check that produces
+// no output when it passes gives no signal when it silently stops running,
+// which is the failure mode this whole file is written against.
+console.log(
+  `Project invariants intact: no drizzle-kit push in package.json or any of ` +
+    `${PUSH_SCANNED_SOURCES.length} scanned sources, and ${JOURNAL_FILE} agrees ` +
+    "with the directory the app reads and drizzle-kit writes.",
 );

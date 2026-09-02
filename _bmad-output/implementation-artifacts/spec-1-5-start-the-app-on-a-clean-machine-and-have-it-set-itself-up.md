@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-08-30'
 status: 'done'
 baseline_commit: 'f6d077641cee7f175d206850ef4a67fdab11bebe'
-review_loop_iteration: 1
+review_loop_iteration: 2
 context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 ---
 
@@ -65,7 +65,7 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 - `next.config.ts` -- **no change needed, verified.** `better-sqlite3` is already in Next 16.3.0's default external list at `node_modules/next/dist/lib/server-external-packages.jsonc:33`. This retires the open `serverExternalPackages` item in `deferred-work.md:5`.
 - `.gitignore` -- add `/boards.json` beside `/data` and `/out` (:43). It is runtime state written on every start; untracked, it would dirty the tree for every future story.
 - `tests/bootstrap.test.mts` -- new. Must live in `tests/` with a `.test.mts` suffix (`scripts/run-tests.mjs:22-23`); `adapters/` is **not** in `SEARCH_DIRS` (:32), so a test placed beside the adapter would silently never run. Use `fs.mkdtempSync` under `os.tmpdir()` and pass that root in — no loader is available and files run concurrently.
-- `README.md` -- document bootstrap and `db:generate`. Not in the e2e `OBSERVED` list (`scripts/e2e-gate.mjs:33-41`), and neither is anything else this story touches, so `.e2e-verified` stays valid.
+- `README.md` -- document bootstrap and `db:generate`. Not in the e2e `OBSERVED` list itself. **Amended after round 1:** the rest of that sentence — "and neither is anything else this story touches, so `.e2e-verified` stays valid" — is the reasoning that changed, not an oversight. The startup gate has to be run by `pnpm verify` to mean anything, so `instrumentation.ts`, `adapters/db/bootstrap.ts` and the gate itself were added to `OBSERVED`; round 2 added the seed, the journal and both new `core/` declarations, since the gate now asserts their content. Editing any of them makes `pnpm build` refuse until the app has been booted again.
 
 ## Tasks & Acceptance
 
@@ -92,6 +92,55 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 - Given `adapters/db/migrations`, when I list it, then it holds the journal and no `.sql` file, and no content table exists in the schema module.
 - Given `pnpm build`, when it completes, then no `./data` directory was created by the build itself.
 - Given `pnpm test` immediately followed by `git status`, then the working tree is clean — the suite wrote only into a temp dir.
+
+### Review Findings
+
+_Round 2 code review, 2026-09-02. Four layers: blind-hunter, edge-case-hunter, verification-gap, acceptance-auditor. All decisions resolved and all patches applied in the same pass; deferrals are recorded in `deferred-work.md`._
+
+- [x] [Review][Decision] **The "Concurrent start" matrix row is half-deferred and wholly untested** — The frozen I/O matrix says concurrent start is harmless and that "`EEXIST` swallowed, all else rethrown". The file half holds, but `deferred-work.md` now records that two servers starting together can fail the second with `SQLITE_BUSY` during `migrate()` — deferring half of a frozen row. No test spawns concurrent bootstraps, and `createOnce`'s non-`EEXIST` rethrow branch (`adapters/db/bootstrap.ts:115`) is never exercised: both failure tests fail earlier, at `mkdirSync` and at `drizzle()`. Options: (a) amend the frozen row to scope it to the files, (b) make the database half genuinely concurrent-safe, (c) accept the deferral as recorded. **Resolved (b):** a `busy_timeout` pragma makes the database half genuinely concurrent-safe, two real processes now race for one root in `tests/bootstrap.test.mts`, and the `EACCES` case exercises `createOnce`'s rethrow branch. The `SQLITE_BUSY` deferral is withdrawn.
+- [x] [Review][Decision] **The "Journal deleted" matrix row is untestable by construction** — `tests/bootstrap.test.mts` says so in its own comment; the row is asserted only by analogy against a different failure (a directory at the db path). `MIGRATIONS_FOLDER` (`adapters/db/bootstrap.ts:70`) is a module constant with no injection point, unlike `root`. The task "cover every I/O matrix row" is marked `[x]`. Options: (a) add a migrations-folder parameter beside `root`, (b) amend the task's claim to name the row as covered by inference, (c) accept as-is. **Resolved (a):** `migrationsFolder` joins `root` as a parameter, and the row is now exercised directly against an empty folder and a folder with an empty `meta/`.
+- [x] [Review][Decision] **`boardEntrySchema.token` forks against AD-2's `fetchJobs(boardUrl)`** — This story makes `core/boards/boards-file.ts` the single declaration of the board shape and chooses a `token`; `_bmad-output/specs/spec-tailor/adapters.md:10` still fixes `fetchJobs(boardUrl)`. `SPEC.md` was edited to favour the token, but nothing declares the token→URL mapping and no deferred-work item or Design Note records that the port signature is now the side that must change. Options: (a) record the decision and open a deferred item against `adapters.md`, (b) repoint the schema at a URL, (c) declare the mapping here. **Resolved (a):** the token wins; the reasoning is in Design Notes and a deferred item names `adapters.md:10` for Epic 2's first board story to amend.
+
+- [x] [Review][Patch] **`DRIZZLE_PUSH` misses the space-separated flag form — a working push invocation passes the build** [scripts/project-invariants.mjs:55]
+- [x] [Review][Patch] **The push scan does not cover "any config"; README:38 claims a reach it does not have** [scripts/verify-boundaries.mjs:678]
+- [x] [Review][Patch] **The startup gate passes when bootstrap throws after creating all three artifacts** [scripts/startup-gate.mjs:151]
+- [x] [Review][Patch] **The startup gate asserts existence only — three empty files would satisfy it** [scripts/startup-gate.mjs:144]
+- [x] [Review][Patch] **The composed push/journal checks reaching `fail()` are untested** [scripts/verify-boundaries.mjs:674]
+- [x] [Review][Patch] **The widened stray-test scan is untested — narrowing it back stays green** [scripts/run-tests.mjs:37]
+- [x] [Review][Patch] **The startup gate can pass against a stale build** [scripts/startup-gate.mjs:139]
+- [x] [Review][Patch] **`missingMigrationFiles` checks one direction only; entry shape is unvalidated** [scripts/project-invariants.mjs:145]
+- [x] [Review][Patch] **`e2e-gate.mjs` `OBSERVED` omits the seed, the journal, and both new `core/` modules** [scripts/e2e-gate.mjs:40]
+- [x] [Review][Patch] **`BOOT_TIMEOUT_MS` is not enforced — `fetch` carries no `AbortSignal`** [scripts/startup-gate.mjs:118]
+- [x] [Review][Patch] **AC 6 cannot detect its own failure: `.gitignore` hides a test that bootstraps the real cwd** [.gitignore:43]
+- [x] [Review][Patch] **AC 5 has no automated verification and is unobservable on a machine that has run the app** [scripts/startup-gate.mjs:1]
+- [x] [Review][Patch] **`failed()` tells the operator the app cannot start; measured behaviour is a permanent 500** [adapters/db/bootstrap.ts:82]
+- [x] [Review][Patch] **README overstates exclusive-create and says all three artifacts come from the seed** [README.md:58]
+- [x] [Review][Patch] **README's `core/` layout line is stale — `boards`, `bootstrap`, `errors` are missing** [README.md:122]
+- [x] [Review][Patch] **README does not document that `pnpm verify` seeds the developer's real checkout** [README.md:42]
+- [x] [Review][Patch] **The permanent-500 failure mode is documented only in a code comment** [README.md:42]
+- [x] [Review][Patch] **`bootstrapReportSchema.parse` sits outside every `try` — a `ZodError` escapes unwrapped** [adapters/db/bootstrap.ts:224]
+- [x] [Review][Patch] **The canon copy is not atomic; a truncated canon would persist forever** [adapters/db/bootstrap.ts:144]
+- [x] [Review][Patch] **`freePort` check-then-bind race** [scripts/startup-gate.mjs:63]
+- [x] [Review][Patch] **`spawn`'s `error` event has no listener** [scripts/startup-gate.mjs:93]
+- [x] [Review][Patch] **"created none of" misreports a partial miss as a total wiring failure** [scripts/startup-gate.mjs:155]
+- [x] [Review][Patch] **One `try/catch` covers two independent imports, reports a generic message, and drops two assertions** [scripts/verify-boundaries.mjs:760]
+- [x] [Review][Patch] **The success line still reports only the boundary guardrail — the new checks have no positive signal** [scripts/verify-boundaries.mjs:849]
+- [x] [Review][Patch] **An unreadable scanned file surfaces as a raw ENOENT instead of a named guardrail failure** [scripts/verify-boundaries.mjs:691]
+- [x] [Review][Patch] **"the journal this repo ships has no problems" never reads the shipped journal** [tests/project-invariants.test.mts:70]
+- [x] [Review][Patch] **The mtime assertion cannot see a rewrite inside one filesystem tick** [tests/bootstrap.test.mts:197]
+- [x] [Review][Patch] **`SEARCH_DIRS` is still hardcoded — a new top-level directory stays invisible** [scripts/run-tests.mjs:37]
+- [x] [Review][Patch] **The Code Map's README entry is now false: `OBSERVED` gained three entries** [_bmad-output/implementation-artifacts/spec-1-5-start-the-app-on-a-clean-machine-and-have-it-set-itself-up.md:58]
+- [x] [Review][Patch] **This spec's frontmatter says `status: 'done'` while `sprint-status.yaml` says `review`** [_bmad-output/implementation-artifacts/sprint-status.yaml:43]
+- [x] [Review][Patch] **Two "Suggested Review Order" anchors point at the wrong lines** [_bmad-output/implementation-artifacts/spec-1-5-start-the-app-on-a-clean-machine-and-have-it-set-itself-up.md:229]
+- [x] [Review][Patch] **`epics.md:23` still cites the seed's pre-`git mv` path** [_bmad-output/planning-artifacts/epics.md:23]
+- [x] [Review][Patch] **Mid-word strikethrough does not render** [_bmad-output/implementation-artifacts/deferred-work.md:10]
+- [x] [Review][Patch] **The gate never boots twice, so AC 1 had no server-level proof** [scripts/startup-gate.mjs:310] — folded in during the fix pass; not in the original triage list
+- [x] [Review][Patch] **`startup-gate.mjs` had no test of its own, unlike its sibling** [tests/startup-gate.test.mts:1] — folded in during the fix pass; not in the original triage list
+
+- [x] [Review][Defer] **`EEXIST` on a directory or dangling symlink is reported as success** [adapters/db/bootstrap.ts:97] — deferred, already recorded in `deferred-work.md`; note the existing item covers only the canon path, and `boards.json` has the same hole
+- [x] [Review][Defer] **`PUSH_SCAN_EXEMPT` is a by-construction hole in the ban it enforces** [scripts/verify-boundaries.mjs:683] — deferred, already recorded in `deferred-work.md`
+- [x] [Review][Defer] **`eslint.config.mjs` has no element type for repo-root source** [eslint.config.mjs:719] — deferred, pre-existing config shape; no live consequence while `default: "allow"` and only `from: ["core"]` is constrained
+- [x] [Review][Defer] **`epic-1-context.md`'s `core/` list was not amended for `core/bootstrap/`** [_bmad-output/implementation-artifacts/epic-1-context.md:37] — deferred, extends the existing planning-doc item at `deferred-work.md:235`
 
 ## Spec Change Log
 
@@ -158,11 +207,73 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
   half: `playwright` is in Next 16.3.0's default external list at
   `server-external-packages.jsonc:76-77` alongside `better-sqlite3` at `:33`.
 
+### Round 2 (2026-09-02)
+
+- **The push ban did not cover the ordinary spelling of the command.**
+  `DRIZZLE_PUSH` matched a run of flags as `(?:\s+-{1,2}\S+)*`, which consumes a
+  flag but not a space-separated value, so `push` no longer immediately followed
+  and `drizzle-kit --config drizzle.config.ts push` — verified to be a real,
+  working invocation — passed the build. AC 3 and the story's central **Never**
+  were both defeated by the form most people would write. Flags are now matched
+  as optional flag/value pairs, and the escaping forms are in the unit test.
+- **The composition is now the thing under test, not just the predicates.**
+  Round 1 exported the predicates and fired violating inputs at them, but
+  `verify-boundaries.mjs` still owned the wiring from those predicates to
+  `fail()`, and replacing one call argument with an empty object left everything
+  green. `projectInvariantProblems()` takes the inputs and returns the sentences;
+  the verifier gathers files and forwards them.
+- **The startup gate asserted existence, and existence is cheap.** Three
+  `writeFileSync(path, "")` calls satisfied it. It now compares canon
+  byte-for-byte against the seed, parses `boards.json`, and requires the
+  `__drizzle_migrations` ledger in `tailor.db` — and reports a 5xx even when all
+  three paths are present, which is reachable: bootstrap creates canon and
+  `boards.json` before it opens the database, so a throw inside `migrate()`
+  leaves every path on disk behind a server that 500s forever.
+- **The gate boots twice.** AC 1 is written about starting, stopping and
+  starting again; it had no server-level proof, only the in-process re-run test
+  that round 1 rejected as insufficient for the wiring. It also refuses to run
+  against a build older than the startup path, which `pnpm test:e2e` on its own
+  could otherwise use to re-arm the freshness marker for code it never booted.
+- **Both matrix rows that were untestable are tested.** `migrationsFolder` joins
+  `root` as a parameter, which is what makes "journal deleted" reachable at all;
+  "concurrent start" spawns two real processes at one root and asserts exactly
+  one of them reports `created` per artifact. The database half of that row is
+  no longer deferred: a `busy_timeout` pragma makes the loser wait for the lock
+  rather than fail with `SQLITE_BUSY`.
+- **Canon placement is atomic as well as exclusive.** `COPYFILE_EXCL` opens the
+  real canon path and streams into it, so an interrupted first start left a
+  truncated file that every later run reported `left-untouched` and never
+  reseeded. The seed is staged under a UUID name and hard-linked into place —
+  one atomic syscall that still fails `EEXIST` when canon is already there.
+- **The two "cannot write" criteria can now fail.** AC 5 and AC 6 were both
+  unfalsifiable: `/data` and `/boards.json` are gitignored, so a test that
+  bootstrapped the real working directory left `git status` clean, and on any
+  machine that had run the app a human could not tell whether `pnpm build`
+  created `./data`. Both are now mtime comparisons — in `run-tests.mjs` around
+  the suite, and in `verify.mjs` around the build step.
+- **Measured, correcting the failure message.** `failed()` told the operator
+  "The app cannot start without it", which contradicts what `instrumentation.ts`
+  had already recorded as measured: the process keeps listening and 500s
+  forever. The sentence now says that.
+
 ## Design Notes
 
 **Why `instrumentation.ts` and not a `predev` script.** The story's ACs are all phrased "when the app starts", and a `predev` hook would miss `next start` — which is what `playwright.config.ts` runs. Instrumentation covers both and is skipped during `next build`, so the build stays a pure check chain. The cost is that it is new ground in this repo: no `instrumentation.ts` exists today.
 
 **Why the report type.** "Idempotent" is otherwise only testable as "did not crash twice". Returning `created | left-untouched` per artifact lets the re-run test assert the *absence of a write* directly, which is the AC that actually protects canon.
+
+**The board is identified by a token, and `fetchJobs` is the side that changes.**
+`core/boards/boards-file.ts` declares `boardEntrySchema` with `{ type, token }`,
+while AD-2 (`_bmad-output/specs/spec-tailor/adapters.md:10`) fixes
+`fetchJobs(boardUrl)`. Round 2 flagged the fork; this records the call rather
+than leaving two spec companions disagreeing. The token wins: it is the only
+part a human can be asked to type, every one of the four vendors addresses a
+board by a slug in a URL the adapter can build, and a stored URL would let the
+same board be written four ways that no longer compare equal — which matters
+because Epic 2 reuses this value as `postings.source` and as the adapter
+registry key. The consequence is that `BoardPort` takes the entry, not a URL,
+and each adapter owns its own token→URL construction. `adapters.md` still says
+otherwise and is not this story's file to edit; a deferred item now names it.
 
 **What this story cannot prove.** No content table exists to migrate, so the migration path is proven only to the extent that `migrate()` runs, creates `__drizzle_migrations`, and is re-runnable. The first real table arrives in Epic 2 and is where a migration stops being a mechanism and starts being a schema.
 
@@ -185,16 +296,16 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 **The routine**
 
 - Start here: the whole contract in one signature — a root, a report, no side channel.
-  [`bootstrap.ts:133`](../../adapters/db/bootstrap.ts#L133)
+  [`bootstrap.ts:166`](../../adapters/db/bootstrap.ts#L166)
 
 - Idempotence by construction: the filesystem arbitrates, so there is no check-then-write window.
-  [`bootstrap.ts:115`](../../adapters/db/bootstrap.ts#L115)
+  [`bootstrap.ts:140`](../../adapters/db/bootstrap.ts#L140)
 
 - `COPYFILE_EXCL` is what keeps an irreplaceable canon alive on every re-run.
-  [`bootstrap.ts:144`](../../adapters/db/bootstrap.ts#L144)
+  [`bootstrap.ts:193`](../../adapters/db/bootstrap.ts#L193)
 
 - The outcome is read off the ledger, not off the file — an empty `.db` is not an untouched one.
-  [`bootstrap.ts:197`](../../adapters/db/bootstrap.ts#L197)
+  [`bootstrap.ts:257`](../../adapters/db/bootstrap.ts#L257)
 
 **Starting the app**
 
@@ -210,7 +321,7 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
   [`_journal.json:1`](../../adapters/db/migrations/meta/_journal.json#L1)
 
 - Exported so one assertion can tie it to where `db:generate` actually writes.
-  [`bootstrap.ts:70`](../../adapters/db/bootstrap.ts#L70)
+  [`bootstrap.ts:77`](../../adapters/db/bootstrap.ts#L77)
 
 **Declared once in the core (AD-16)**
 
@@ -225,22 +336,31 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md']
 
 **Proof the mechanism cannot rot**
 
-- Boots the real server on an empty cwd — deleting the `bootstrap()` call fails here.
-  [`startup-gate.mjs:36`](../../scripts/startup-gate.mjs#L36)
+- Boots the real server on an empty cwd, twice — deleting the `bootstrap()` call fails here.
+  [`startup-gate.mjs:217`](../../scripts/startup-gate.mjs#L217)
+
+- Existence was not enough: three empty files used to satisfy the gate.
+  [`startup-gate.mjs:111`](../../scripts/startup-gate.mjs#L111)
 
 - Predicates split out of the guardrail so tests can fire them at violating input.
-  [`project-invariants.mjs:55`](../../scripts/project-invariants.mjs#L55)
+  [`project-invariants.mjs:65`](../../scripts/project-invariants.mjs#L65)
 
 - Every journal defect reported at once, not just the first one found.
-  [`project-invariants.mjs:105`](../../scripts/project-invariants.mjs#L105)
+  [`project-invariants.mjs:116`](../../scripts/project-invariants.mjs#L116)
 
 - Ties `out`, `MIGRATIONS_FOLDER` and the journal path together by import, not by regex.
-  [`verify-boundaries.mjs:760`](../../scripts/verify-boundaries.mjs#L760)
+  [`verify-boundaries.mjs:745`](../../scripts/verify-boundaries.mjs#L745)
 
 **Supporting**
 
 - The behavioural proof, all in temp roots: `pnpm test` runs inside `pnpm build`.
-  [`bootstrap.test.mts:69`](../../tests/bootstrap.test.mts#L69)
+  [`bootstrap.test.mts:56`](../../tests/bootstrap.test.mts#L56)
 
-- `adapters/` now holds real source, so a stray test there must stop being invisible.
-  [`run-tests.mjs:32`](../../scripts/run-tests.mjs#L32)
+- Derived from the tree, not listed: the next directory to hold source is covered too.
+  [`run-tests.mjs:49`](../../scripts/run-tests.mjs#L49)
+
+- The suite must not write into the real checkout — `git status` could never see it.
+  [`run-tests.mjs:131`](../../scripts/run-tests.mjs#L131)
+
+- The composition, not just the predicates, is what a test can now fire input at.
+  [`project-invariants.mjs:279`](../../scripts/project-invariants.mjs#L279)

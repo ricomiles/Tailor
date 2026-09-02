@@ -48,6 +48,15 @@ const OBSERVED = [
   "instrumentation.ts",
   "adapters/db/bootstrap.ts",
   "scripts/startup-gate.mjs",
+  // What a boot actually writes. The gate now compares canon byte-for-byte
+  // against the seed and parses `boards.json`, so replacing the seed, editing
+  // the journal, or changing what `EMPTY_BOARDS_FILE` serialises all change the
+  // gate's verdict — and without these, each of them could land with a recorded
+  // marker still valid and the app never re-booted.
+  "adapters/db/seed/resume.canon.seed.json",
+  "adapters/db/migrations/meta/_journal.json",
+  "core/boards/boards-file.ts",
+  "core/bootstrap/bootstrap-report.ts",
 ];
 
 export function observedHash() {

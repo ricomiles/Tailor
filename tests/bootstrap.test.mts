@@ -1,7 +1,9 @@
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -9,6 +11,7 @@ import {
   rmSync,
   statSync,
   unlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -256,6 +259,25 @@ test("a deleted canon is reseeded and an edited boards.json is left alone", () =
   assert.equal(readFileSync(join(root, BOARDS), "utf8"), boardsBefore);
 });
 
+test("a re-run does not reopen canon, at any filesystem timestamp resolution", () => {
+  // Comparing mtime across two calls microseconds apart cannot see a rewrite
+  // that lands inside one tick, and some volumes tick at a whole second. So the
+  // timestamp is pushed a long way into the past first: any write at all would
+  // move it to now, which is unambiguously different however coarse the clock.
+  //
+  // `birthtime` is not the answer here — macOS clones the seed's creation time
+  // through `copyFileSync`, so canon is born with a timestamp older than the
+  // directory it sits in.
+  const root = makeRoot();
+  bootstrap(root);
+  const backdated = new Date("2020-01-01T00:00:00Z");
+  utimesSync(join(root, CANON), backdated, backdated);
+
+  bootstrap(root);
+
+  assert.equal(statSync(join(root, CANON)).mtimeMs, backdated.getTime());
+});
+
 // ---------------------------------------------------------------------------
 // Malformed existing file. Idempotence outranks repair.
 // ---------------------------------------------------------------------------
@@ -322,12 +344,84 @@ test("an unopenable database fails as a TailorError, not a raw driver error", ()
   // A directory where the database file belongs. The canon copy and the boards
   // write both succeed; opening the database does not, which is the migration
   // half of the routine failing loudly rather than starting a server with no
-  // ledger. The `Journal deleted` row of the I/O matrix fails through this same
-  // wrapper — the journal itself cannot be removed here without breaking every
-  // other case in the file, since it ships with the source.
+  // ledger. The `Journal deleted` row is exercised directly below, through the
+  // `migrationsFolder` parameter.
   mkdirSync(join(root, DATABASE));
 
   assertTailorInternal(() => bootstrap(root));
+});
+
+test("a missing journal fails loudly rather than migrating nothing", () => {
+  // The I/O matrix's `Journal deleted` row, exercised rather than inferred.
+  // It needed the `migrationsFolder` parameter to be reachable at all: the
+  // journal ships with the source, so the only way to remove it used to be to
+  // delete the repo's own file, which would have broken every other case here.
+  //
+  // Silence is the specific danger. `drizzle-orm` reads the journal to decide
+  // what to apply; a directory with no journal is not "zero migrations", it is a
+  // migrator that throws — and this asserts the throw is wrapped like every
+  // other failure rather than escaping as a raw driver error.
+  const root = makeRoot();
+  const emptyFolder = mkdtempSync(join(tmpdir(), "tailor-no-journal-"));
+  roots.push(emptyFolder);
+
+  assertTailorInternal(() => bootstrap(root, emptyFolder));
+});
+
+test("a journal directory that exists and is empty is still a failure, not a no-op", () => {
+  const root = makeRoot();
+  const emptyFolder = mkdtempSync(join(tmpdir(), "tailor-empty-meta-"));
+  roots.push(emptyFolder);
+  mkdirSync(join(emptyFolder, "meta"));
+
+  assertTailorInternal(() => bootstrap(root, emptyFolder));
+});
+
+// ---------------------------------------------------------------------------
+// Concurrent start. The row the exclusive-create design exists for.
+// ---------------------------------------------------------------------------
+
+test("two processes starting together leave one canon, one boards file, one ledger", () => {
+  // Real processes, not two calls in a loop: the guarantee is about two servers
+  // racing for the same directory, and a sequential re-run cannot lose that
+  // race. Exactly one of the two must report `created` for each file — the
+  // filesystem arbitrates, and the loser reports `left-untouched` rather than
+  // truncating what the winner just placed.
+  const root = makeRoot();
+  const runner = join(REPO_ROOT, "tests", "fixtures", "bootstrap-once.mts");
+
+  const results = [0, 1].map(() =>
+    spawnSync(process.execPath, [runner, root], { encoding: "utf8" }),
+  );
+
+  for (const result of results) {
+    assert.equal(result.status, 0, result.stderr);
+  }
+  const reports = results.map((result) => JSON.parse(result.stdout.trim()));
+
+  for (const artifact of BOOTSTRAP_ARTIFACTS) {
+    const createdCount = reports.filter((report) => report[artifact] === created).length;
+    assert.equal(createdCount, 1, `${artifact} was created by ${createdCount} of 2 starts`);
+  }
+  assert.deepEqual(readFileSync(join(root, CANON)), readFileSync(SEED));
+  assert.deepEqual(boardsFileSchema.parse(JSON.parse(readFileSync(join(root, BOARDS), "utf8"))), {
+    boards: [],
+  });
+});
+
+test("a canon path that cannot be linked fails rather than reporting left-untouched", () => {
+  // `createOnce` swallows `EEXIST` and rethrows everything else. Every other
+  // failure case in this file fails earlier — at `mkdirSync`, or at the driver —
+  // so the rethrow branch itself was never taken. A read-only data directory
+  // makes the canon placement fail with `EACCES`, which must not be mistaken for
+  // "the file was already there".
+  const root = makeRoot();
+  mkdirSync(join(root, "data"), { mode: 0o500 });
+  try {
+    assertTailorInternal(() => bootstrap(root));
+  } finally {
+    chmodSync(join(root, "data"), 0o700);
+  }
 });
 
 // ---------------------------------------------------------------------------

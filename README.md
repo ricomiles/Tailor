@@ -35,13 +35,17 @@ target — by design.
 | `pnpm test:e2e` | Boots the app on an empty temp directory and asserts it set itself up (`scripts/startup-gate.mjs`), runs Playwright against a served production build, then records the freshness marker. The only thing that observes rendered output — font faces, colour tokens, layout. Needs `playwright install chromium` and a current `pnpm build`. |
 | `pnpm build` | `clean:probes` → `lint` → `typecheck` → `test` → `verify:boundaries` → `next build`. Next 16 has no `next lint`, so the build chains every check explicitly. |
 | `pnpm verify` | `build` → `test:e2e`. The full gate; `build` alone never renders the app. Runs the build with the e2e freshness gate off, since that gate is what the e2e run satisfies. |
-| `pnpm verify:boundaries` | Proves the core dependency rule still fires on every violation class; pins the `build` chain and every script body it names; bans the drizzle-kit `push` subcommand from every script and config; checks the migration journal's shape and that each entry has its `.sql`; asserts the app, drizzle-kit and the journal check all mean the same migrations directory; and fails the build when `pnpm verify` has not run against the current sources. |
+| `pnpm verify:boundaries` | Proves the core dependency rule still fires on every violation class; pins the `build` chain and every script body it names; bans the drizzle-kit `push` subcommand from every `package.json` script and every root-level config and `scripts/` source; checks the migration journal's shape and that each entry has its `.sql`; asserts the app, drizzle-kit and the journal check all mean the same migrations directory; and fails the build when `pnpm verify` has not run against the current sources. |
 | `pnpm clean:probes` | Clears a boundary probe left behind by a killed `verify:boundaries` run. |
 | `pnpm db:generate` | Writes a new SQL migration into `adapters/db/migrations/` from `adapters/db/schema.ts`. There is deliberately no `db:push`. |
 
 ## Bootstrap
 
-`pnpm dev` and `pnpm start` set the machine up before serving a request. The
+`pnpm dev` and `pnpm start` set the machine up before serving a request. Every
+test drives the routine against a temp directory instead — `bootstrap()` takes
+the root as a parameter for exactly that reason, and `pnpm test` fails if the
+suite touched `./data` or `./boards.json`, which `git status` could not have
+told you since both are gitignored. The
 repo-root `instrumentation.ts` calls `bootstrap()` from `adapters/db/bootstrap.ts`
 in Next's `register()` hook, which runs once per server process and completes
 before the first request. The routine creates `./data`, seeds
@@ -54,28 +58,49 @@ prints them:
 bootstrap: canon created, boardsFile created, database created
 ```
 
-Nothing here ever touches a file that already exists. Every write goes through
-an exclusive-create flag, so "does it exist?" and "write it" are one operation
-the filesystem arbitrates — a second start reports `left-untouched` across the
-board and leaves a hand-edited canon byte-for-byte intact, including a canon
-holding invalid JSON. Repair is not on offer: `boards.json` is parsed and
-validated by the code that reads it, not by the routine that placed it.
+Neither file is ever touched once it exists. Canon is staged and then
+hard-linked into place, `boards.json` is written with the `wx` flag: each is a
+single exclusive syscall, so "does it exist?" and "write it" are one operation
+the filesystem arbitrates — a second start reports `left-untouched` and leaves a
+hand-edited canon byte-for-byte intact, including a canon holding invalid JSON.
+Repair is not on offer: `boards.json` is parsed and validated by the code that
+reads it, not by the routine that placed it.
+
+`data/tailor.db` is the exception, and it is not a file the routine writes
+content into: the driver opens it read-write on every start and `migrate()`
+creates the `__drizzle_migrations` ledger if it is not already there. Its
+`created` / `left-untouched` outcome is read off the ledger's row count rather
+than off the file, because an empty `tailor.db` — an interrupted first start, a
+stray `touch` — is not a migrated one.
 
 `next build` does **not** run it (Next skips instrumentation during the
-production build), so building creates no `./data`.
+production build), so building creates no `./data`. `pnpm verify` does: its
+`test:e2e` half serves the app with `next start` at the repo root, so a normal
+verify run is what first creates `./data` and `./boards.json` in your own
+checkout. Both are gitignored.
+
+**If bootstrap throws, the server does not stop.** Measured against Next 16.3.0
+rather than assumed: the process logs the failure, keeps listening, and answers
+every request `500` for the rest of its life, because Next memoises the rejected
+`register()` promise and never retries it. A uniform 500 with a `TailorError` in
+the startup log is the symptom to look for — restarting is the only recovery.
 
 **To reset a machine:** stop the server and `rm -rf data boards.json`. The next
-start recreates all three from the seed. That deletes the canonical resume and
-every posting and run stored so far, and neither is in git — copy `data/` first
-if you mean to keep it.
+start recreates all three — canon copied from the seed, `boards.json` serialised
+from `EMPTY_BOARDS_FILE`, the database created by the driver. That deletes the
+canonical resume and every posting and run stored so far, and none of it is in
+git — copy `data/` first if you mean to keep it.
 
 `scripts/startup-gate.mjs` is what keeps this honest. It boots the real
-production server with its working directory on a fresh temp directory and
-asserts the three artifacts appear there; `pnpm test:e2e` runs it, and
-`instrumentation.ts` and `adapters/db/bootstrap.ts` are in the freshness
-marker's observed list, so changing either makes `pnpm build` refuse until
-`pnpm verify` has booted the app again. Without it, deleting the `bootstrap()`
-call left every other check green.
+production server twice with its working directory on a fresh temp directory:
+the first boot must leave canon byte-identical to the seed, a parseable
+`boards.json` and a database carrying the migration ledger — existence alone is
+not enough, since three empty files would satisfy that — and the second boot,
+after canon is hand-edited, must write nothing at all. `pnpm test:e2e` runs it,
+and the startup path is in the freshness marker's observed list, so changing
+`instrumentation.ts`, the routine, the seed, the journal or either `core/`
+declaration makes `pnpm build` refuse until `pnpm verify` has booted the app
+again. Without it, deleting the `bootstrap()` call left every other check green.
 
 ### `boards.json`
 
@@ -119,7 +144,7 @@ arrive with the story that first needs one.
 ## Layout
 
 ```text
-core/         # ports · canon · pipeline · validation · diff · scoring · gates
+core/         # ports · canon · pipeline · validation · diff · scoring · gates · errors · boards · bootstrap
 adapters/     # boards · ats · model · render · db (bootstrap, schema, migrations, canon seed)
 app/          # App Router; api/ is the composition root
 components/   # resume-document · top-bar

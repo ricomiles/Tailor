@@ -16,8 +16,9 @@
  *    collection one level down.
  */
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { posix, sep } from "node:path";
+import { strayTestFiles } from "./project-invariants.mjs";
 
 const TEST_DIR = "tests";
 const SUFFIX = ".test.mts";
@@ -27,22 +28,33 @@ const SUFFIX = ".test.mts";
 // never run.
 const ANY_TEST_FILE = /\.test\.[cm]?[jt]sx?$/;
 
-// Walked for stray tests. `e2e/` is excluded because Playwright owns it and
-// runs `.spec.ts`; the rest is everything a test could plausibly be written in.
-//
-// `adapters` was missing while that tree held only `.gitkeep` files. It holds
-// real source now — the bootstrap routine, the schema module — so a test
-// written beside it would neither run nor be reported, which is the precise
-// silent omission this guard exists to prevent.
-const SEARCH_DIRS = [
-  "adapters",
-  "app",
-  "components",
-  "core",
-  "scripts",
-  "tests",
-  "tools",
-];
+// Walked for stray tests. Derived from the tree rather than listed, because a
+// hardcoded list is a list someone has to remember to extend: `adapters` was
+// missing from it for as long as that tree held only `.gitkeep` files, and the
+// next top-level directory to hold source would have arrived just as invisible.
+// `e2e/` is excluded because Playwright owns it and runs `.spec.ts`.
+const IGNORED_DIRS = new Set([
+  "e2e",
+  "node_modules",
+  ".next",
+  ".git",
+  ".claude",
+  "_bmad",
+  "_bmad-output",
+  "data",
+  "out",
+  "public",
+]);
+
+const SEARCH_DIRS = readdirSync(".", { withFileTypes: true })
+  .filter(
+    (entry) =>
+      entry.isDirectory() &&
+      !entry.name.startsWith(".") &&
+      !IGNORED_DIRS.has(entry.name),
+  )
+  .map((entry) => entry.name)
+  .sort();
 
 // Repo-root modules are outside every one of those directories:
 // `instrumentation.ts` and `drizzle.config.ts` live there, so a
@@ -94,10 +106,11 @@ function rootEntries() {
   }
 }
 
-const stray = [...SEARCH_DIRS.flatMap((dir) => walk(dir) ?? []), ...rootEntries()]
-  .filter((relative) => ANY_TEST_FILE.test(relative))
-  .filter((relative) => !files.includes(relative))
-  .sort();
+const stray = strayTestFiles(
+  [...SEARCH_DIRS.flatMap((dir) => walk(dir) ?? []), ...rootEntries()],
+  files,
+  ANY_TEST_FILE,
+);
 
 if (stray.length > 0) {
   console.error(
@@ -110,9 +123,40 @@ if (stray.length > 0) {
   process.exit(1);
 }
 
+// The acceptance criterion is "`pnpm test` then `git status` is clean", and it
+// cannot see the failure it is aimed at: `/data` and `/boards.json` are both
+// gitignored, so a test that forgot its `root` argument and bootstrapped the
+// real working directory would seed the developer's own canon and still leave
+// `git status --porcelain` empty. This watches the paths themselves.
+const CWD_ARTIFACTS = ["data", "data/resume.canon.json", "data/tailor.db", "boards.json"];
+const stamp = () =>
+  CWD_ARTIFACTS.map((relative) => {
+    try {
+      return `${relative}@${statSync(relative).mtimeMs}`;
+    } catch {
+      return `${relative}@absent`;
+    }
+  });
+
+const before = stamp();
+
 const result = spawnSync(process.execPath, ["--test", ...files], {
   stdio: "inherit",
 });
+
+const touched = stamp()
+  .map((after, index) => (after === before[index] ? null : CWD_ARTIFACTS[index]))
+  .filter((relative) => relative !== null);
+
+if (touched.length > 0) {
+  console.error(
+    `The suite wrote into the real working directory: ${touched.join(", ")}.\n\n` +
+      "Every test must pass a temp root to `bootstrap()`. These paths are " +
+      "gitignored, so `git status` would have stayed clean while the suite " +
+      "seeded — or overwrote — the developer's own canon.",
+  );
+  process.exit(1);
+}
 
 // Distinguished so a failed spawn or a killed run does not read as a test
 // failure. `result.status` is null in both cases, which the old `?? 1` reported

@@ -1,7 +1,14 @@
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { constants, copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+  copyFileSync,
+  linkSync,
+  mkdirSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 // Relative with the extension, not the `@/` alias: this module is loaded
@@ -25,13 +32,13 @@ import { TailorError } from "../../core/errors/tailor-error.ts";
  * migrations. Called at every server start from the repo-root
  * `instrumentation.ts`.
  *
- * Idempotence is by construction, not by convention: each file is written
- * through an exclusive-create flag, so "does it exist?" and "write it" are one
- * operation the filesystem arbitrates. An existing file is never opened for
- * write, never re-serialised, never repaired. That is what keeps canon alive —
- * it is gitignored, hand-authored and irreplaceable (AD-8), and a
- * check-then-write with a gap between the halves is a truncation waiting for a
- * second process.
+ * Idempotence is by construction, not by convention: each file is placed by a
+ * single exclusive syscall — `linkSync` for canon, the `wx` flag for
+ * `boards.json` — so "does it exist?" and "write it" are one operation the
+ * filesystem arbitrates. An existing file is never opened for write, never
+ * re-serialised, never repaired. That is what keeps canon alive — it is
+ * gitignored, hand-authored and irreplaceable (AD-8), and a check-then-write
+ * with a gap between the halves is a truncation waiting for a second process.
  *
  * Bootstrap does not parse canon; it copies bytes. Story 1.6's gateway is the
  * only module that opens that file, and a validating bootstrap would be a
@@ -73,9 +80,26 @@ export const MIGRATIONS_FOLDER = join(HERE, "migrations");
 const MIGRATIONS_TABLE = "__drizzle_migrations";
 
 /**
+ * How long SQLite waits for a locked database before giving up.
+ *
+ * Only ever spent when two servers start at the same moment and both reach
+ * `migrate()`; the winner holds the write lock for as long as it takes to
+ * create one table. Generous rather than tight because the cost of waiting is a
+ * slower second boot and the cost of not waiting is a crashed one.
+ */
+const BUSY_TIMEOUT_MS = 5_000;
+
+/**
  * Every failure leaves here as one `TailorError` carrying `internal` and the
  * original as `cause`. A bare `ENOENT` reaching Next's startup handler names a
  * path and no reason; this names the artifact, and the stack survives.
+ *
+ * The sentence says what was measured rather than what would be tidy. An
+ * earlier draft read "The app cannot start without it", which is false against
+ * Next 16.3.0: the process does not exit. It keeps listening and answers every
+ * request 500 for its whole life, because `ensureInstrumentationRegistered`
+ * memoises the rejected promise. Telling an operator the app stopped sends them
+ * looking for a process that is still there.
  *
  * No `stage`: no pipeline run is in flight at server start, and the envelope
  * treats an absent stage as a real state rather than a missing one.
@@ -83,7 +107,8 @@ const MIGRATIONS_TABLE = "__drizzle_migrations";
 function failed(what: string, cause: unknown): TailorError {
   return new TailorError(
     ERROR_CODES.internal,
-    `Bootstrap could not ${what}. The app cannot start without it.`,
+    `Bootstrap could not ${what}. The server will keep listening and answer ` +
+      "every request 500 until this is fixed and it is restarted.",
     { cause },
   );
 }
@@ -123,6 +148,14 @@ function createOnce(what: string, write: () => void): ArtifactOutcome {
 }
 
 /**
+ * @param migrationsFolder Directory the journal and its `.sql` files are read
+ * from. Defaults to the one shipped beside this module, and is a parameter for
+ * the same reason `root` is: the I/O matrix's "journal deleted" row is a real
+ * failure mode with a real expected behaviour, and it could not be tested at
+ * all while this path was a module constant — the journal ships with the source,
+ * so removing it to exercise the row would have broken every other case in the
+ * suite. Production never passes it.
+ *
  * @param root Directory the artifacts are created under. Defaults to the
  * process's working directory, which is the repo root under `next dev` and
  * `next start`. It is a parameter so the suite can point the routine at a temp
@@ -130,19 +163,45 @@ function createOnce(what: string, write: () => void): ArtifactOutcome {
  * real `./data` would both dirty the working tree and write over the very canon
  * file this story exists to protect.
  */
-export function bootstrap(root: string = process.cwd()): BootstrapReport {
+export function bootstrap(
+  root: string = process.cwd(),
+  migrationsFolder: string = MIGRATIONS_FOLDER,
+): BootstrapReport {
   try {
     mkdirSync(join(root, DATA_DIRECTORY), { recursive: true });
   } catch (error) {
     throw failed(`create ${DATA_DIRECTORY}/`, error);
   }
 
-  // `COPYFILE_EXCL` is the exclusive-create flag for a copy: the destination is
-  // opened with `O_EXCL`, so an existing canon file fails the syscall instead of
-  // being overwritten. There is no window between the check and the write
-  // because there is no check.
+  // Staged, then hard-linked into place — not copied straight to the target.
+  //
+  // `COPYFILE_EXCL` alone was exclusive but not *atomic*: it opens the real
+  // canon path and streams the seed into it, so a process killed mid-copy (or a
+  // disk that fills) leaves a truncated `resume.canon.json` at the destination.
+  // Every later start then finds a file, reports `left-untouched`, and never
+  // reseeds — a permanently broken canon that the idempotence guarantee itself
+  // protects from repair.
+  //
+  // `linkSync` keeps both properties at once: the seed is copied to a staging
+  // name first, so a partial write is never at the canon path, and the link is
+  // a single atomic syscall that fails with `EEXIST` when canon is already
+  // there. `createOnce` reads that `EEXIST` exactly as it read the copy's. The
+  // staging name carries a UUID so two processes never contend for it, and the
+  // `finally` removes it on both paths.
   const canon = createOnce(`seed ${CANON_FILE}`, () => {
-    copyFileSync(SEED_FILE, join(root, CANON_FILE), constants.COPYFILE_EXCL);
+    const target = join(root, CANON_FILE);
+    const staging = `${target}.staging-${randomUUID()}`;
+    try {
+      copyFileSync(SEED_FILE, staging);
+      linkSync(staging, target);
+    } finally {
+      try {
+        unlinkSync(staging);
+      } catch {
+        // A staging file that will not unlink is litter, not a reason to fail a
+        // boot whose canon is already in place.
+      }
+    }
   });
 
   // Serialised from the frozen `core/` value rather than from a literal here:
@@ -171,6 +230,16 @@ export function bootstrap(root: string = process.cwd()): BootstrapReport {
     // unverified description of an API drizzle already types.
     database = drizzle(join(root, DATABASE_FILE));
 
+    // The database half of the I/O matrix's "concurrent start" row. The files
+    // are arbitrated by the filesystem, but SQLite's default behaviour on a
+    // locked database is to fail the statement immediately with `SQLITE_BUSY` —
+    // so two servers started together could bring the second down inside
+    // `migrate()` while the first was still writing the ledger. `busy_timeout`
+    // makes the loser wait for the lock instead of throwing, which is the
+    // "loses harmlessly" the row promises. Read with `get` because an
+    // assignment pragma returns the value it set.
+    database.get(sql`PRAGMA busy_timeout = ${sql.raw(String(BUSY_TIMEOUT_MS))}`);
+
     // The outcome is read off the *ledger*, not off `existsSync` on the file.
     // Two reasons, and the second is the one that bites later:
     //
@@ -192,7 +261,7 @@ export function bootstrap(root: string = process.cwd()): BootstrapReport {
     // ledger and applies nothing — the mechanism, ready for Epic 2's first
     // table. A *missing* journal throws here rather than silently migrating
     // nothing, which is the one failure this story must not swallow.
-    migrate(database, { migrationsFolder: MIGRATIONS_FOLDER });
+    migrate(database, { migrationsFolder });
 
     databaseOutcome =
       rowsBefore !== null && ledgerRowCount(database) === rowsBefore
@@ -220,11 +289,21 @@ export function bootstrap(root: string = process.cwd()): BootstrapReport {
   // Parsed rather than assembled and asserted: the report is this story's only
   // proof of idempotence, so it is worth knowing the value really satisfies the
   // schema before a caller branches on it.
-  return bootstrapReportSchema.parse({
-    canon,
-    boardsFile,
-    database: databaseOutcome,
-  });
+  //
+  // Inside a `try` like every other failure in this module. A `ZodError` here is
+  // unreachable today — all three values come from `ARTIFACT_OUTCOMES` — but the
+  // module's contract is that nothing leaves it except a `TailorError`, and an
+  // unreachable hole in that contract is still the one path that would reach
+  // `register()` as a bare error if a later story widened the report.
+  try {
+    return bootstrapReportSchema.parse({
+      canon,
+      boardsFile,
+      database: databaseOutcome,
+    });
+  } catch (error) {
+    throw failed("describe what it did to each artifact", error);
+  }
 }
 
 /**
