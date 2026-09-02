@@ -13,7 +13,7 @@ companions:
   - ../../inputs/design_handoff_resume_tailoring/_ds/modernist-f8562a2f-380c-4e83-bd66-6cba1fb04c4a/readme.md
 sources:
   - ../../inputs/build-spec.md
-  - ../../inputs/resume.canon.json
+  - ../../../adapters/db/seed/resume.canon.seed.json
 ---
 
 > **Canonical contract.** This SPEC and the files in `companions:` are the complete, preservation-validated contract for what to build, test, and validate. Source documents listed in frontmatter are for traceability — consult them only if you need narrative rationale or prose color this contract intentionally omits.
@@ -105,7 +105,7 @@ Rico runs `pnpm dev`, scans his boards, and takes a real posting from a cold que
 
 - The Claude Code CLI is installed and authenticated on the machine, since `lib/model.ts` shells out to `claude -p --output-format json` and no API-key path exists yet.
 - ATS submission adapters cover the same four vendors as discovery (Greenhouse, Lever, Ashby, Workable); no other list is named.
-- `boards.json` holds the watched board list as type plus token or URL; the build spec names the file as the config location but not its shape.
+- ~~`boards.json` holds the watched board list as type plus token or URL; the build spec names the file as the config location but not its shape.~~ **Resolved 2026-09-02 (story 1.5).** The shape is declared once in `core/boards/boards-file.ts` as `{ "boards": [{ type, token, label? }] }`, where `type` is the lowercase vendor union and `token` is the board identifier from the vendor's URL. Not "or URL": every endpoint in `adapters.md` is built from a token, so accepting a pasted URL would give two spellings of one field and no adapter a single thing to read.
 
 ## Open Questions
 

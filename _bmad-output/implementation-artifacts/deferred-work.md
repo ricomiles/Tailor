@@ -3,12 +3,12 @@
 Findings surfaced incidentally by review, not caused by the story that found them.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1-run-the-app-on-the-pinned-stack.md`
-  summary: `next.config.ts` does not declare `serverExternalPackages` for `better-sqlite3` and `playwright`.
-  evidence: Both are native/runtime-heavy packages that Next will otherwise attempt to bundle into the server build. `better-sqlite3` loads a `.node` binding. Belongs to the DB and render adapter stories that first import them.
+  summary: ~~`next.config.ts` does not declare `serverExternalPackages` for `better-sqlite3` and `playwright`.~~ **Closed 2026-08-30 (spec-1-5).**
+  evidence: No config change is needed. Both packages are already in Next 16.3.0's default external list — `node_modules/next/dist/lib/server-external-packages.jsonc:33` and `:76-77` — so neither is bundled. Verified while wiring `adapters/db/bootstrap.ts`, which loads `better-sqlite3` through drizzle at server start.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1-run-the-app-on-the-pinned-stack.md`
-  summary: Nothing creates the `data/` and `out/` directories that the architecture and README both document.
-  evidence: Both are gitignored and neither exists on disk nor in the `.gitkeep` seed, so the first write to either fails at runtime. Needs a setup script or `mkdirSync(..., { recursive: true })` at the adapter boundary; owned by the DB/render stories.
+  summary: Nothing creates the ~~`data/` and~~ `out/` director~~ies~~y that the architecture and README both document. **Half closed 2026-09-02 (spec-1-5).**
+  evidence: `data/` is now created at every server start by `adapters/db/bootstrap.ts`, together with the canon seed, `boards.json` and the SQLite file. `out/` is still uncreated: it is gitignored, absent on disk, and the first PDF write would fail at runtime. Owned by Story 1.9, which is the first thing to render one.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1-run-the-app-on-the-pinned-stack.md`
   summary: Layering is enforced outward-from-core only; no rule constrains `adapters/`, `components/`, or `app/` importing each other.
@@ -234,3 +234,27 @@ Three review layers over the story-1.4 diff. Everything mechanically fixable was
 - **Inbound HTTP types are unconstrained under `core/`.** The invariant is stated as "errors flow one direction", but only the outbound half is policed. `Request`, `Headers`, `NextRequest` and `URLSearchParams` are globals or imports that put transport shape into `core/` just as directly — verified: `export function h(req: Request): Headers { return req.headers; }` lints clean under `core/` today. Deferred because closing it means a new prohibition class rather than a fix to this story's two rules, and the spec's "Ask First" list scopes this story to what the translator needs. The story that first defines a `Port` taking a request-shaped input is where this becomes load-bearing.
 - **`core/errors/` is not in the epic's listed core subdirectories.** `epic-1-context.md` says `core/` contains `ports/`, `canon/`, `pipeline/`, `validation/`, `diff/`, `scoring/`, `gates/`. Story 1.3 already added `core/boards/` without amending it, so the list is non-exhaustive in practice. Deferred as a planning-doc amendment, not a code change — worth folding into the epic-1 retrospective rather than patching one story's spec.
 - **Commit `e3aaa18`'s message miscounts its own fixtures.** It claims "11 new fixtures, one shape each"; `git show --name-status` shows 17 added under `tools/boundary-fixtures/core/canon/` (15 violating, 2 clean). Deferred rather than patched because the commit is already pushed to `origin/main` and amending it would rewrite published history for a cosmetic miscount.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-5-start-the-app-on-a-clean-machine-and-have-it-set-itself-up.md`
+  summary: `boardEntrySchema.token` accepts a pasted board URL as a valid token.
+  evidence: `token` is any non-empty trimmed string, and SPEC.md's own wording was "type plus token or URL" — so a user following the spec pastes a URL, it validates, and the board adapter builds a broken API URL from it. Story 2.1 already owns rejecting an unsupported board URL with a message naming the four types; this validation belongs there, next to that error copy.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-5-start-the-app-on-a-clean-machine-and-have-it-set-itself-up.md`
+  summary: `boardsFileSchema` silently strips unknown top-level and per-entry keys.
+  evidence: No `.strict()`, so a hand-edited `boards.json` carrying `boardz:` or a typo'd key parses clean and yields zero boards with no error. The same module refuses an empty `label` rather than letting a consumer guess what it means; dropping a whole misspelled key without a word is the larger version of that. Deferred because strictness changes what an existing file means, which is Epic 2's call once a real reader and its error surface exist.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-5-start-the-app-on-a-clean-machine-and-have-it-set-itself-up.md`
+  summary: Nothing enforces `(type, token)` uniqueness inside `boards.json`.
+  evidence: A duplicated entry is scanned twice and yields duplicate postings under one `postings.source`. Epic 2's Story 2.1 has the explicit AC "it is not duplicated in `boards.json`", so the constraint has a named owner; declaring it in the schema now would put the rule a story ahead of the code that reports it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-5-start-the-app-on-a-clean-machine-and-have-it-set-itself-up.md`
+  summary: Two servers starting together can fail the second with `SQLITE_BUSY` during `migrate()`.
+  evidence: The file creates are exclusive-create and race harmlessly, but the migration step has no busy timeout or retry, so the bootstrap I/O matrix's "concurrent start is harmless" row holds for the files and not for the database. Low priority while the epic's "one process, one machine" constraint stands; it becomes real the first time a dev runs `pnpm dev` and `pnpm verify` at once.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-5-start-the-app-on-a-clean-machine-and-have-it-set-itself-up.md`
+  summary: A canon path occupied by a directory or a dangling symlink is reported `left-untouched` though no readable file exists.
+  evidence: `COPYFILE_EXCL` raises `EEXIST` for both, which `createOnce` treats as the success case. Bootstrap then reports success and Story 1.6's gateway is the first thing to discover there is nothing to read. Guarding needs a `statSync(..., { throwIfNoEntry: false })?.isFile()` check on the `EEXIST` branch; deferred as exotic relative to the complexity it adds to the story's central invariant.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-5-start-the-app-on-a-clean-machine-and-have-it-set-itself-up.md`
+  summary: `PUSH_SCAN_EXEMPT` is a hole in the `drizzle-kit push` ban by construction.
+  evidence: The two files whose job is to name the pattern are exempt from the scan that looks for it, so an invocation hidden in either passes the build. The exemption list is exported and asserted short, but that assertion is a tripwire rather than a proof. Closing it properly needs the pattern held as split fragments the scanner reassembles, so no file needs an exemption.

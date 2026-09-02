@@ -2,7 +2,7 @@
 
 Companion to [SPEC.md](SPEC.md). The canonical resume: everything true about Rico. Tailoring **selects** from this file and may lightly rephrase what it selects; it may never invent. Every emitted bullet cites a canon `id`.
 
-The file is deliberately larger than any rendered resume. It lives at `./data/resume.canon.json` (gitignored, alongside `tailor.db`). The seed content is `../../inputs/resume.canon.json`.
+The file is deliberately larger than any rendered resume. It lives at `./data/resume.canon.json` (gitignored, alongside `tailor.db`). The seed content is `../../../adapters/db/seed/resume.canon.seed.json` — the app owns its own seed, so a clean machine boots without this planning tree.
 
 ## Access rules
 

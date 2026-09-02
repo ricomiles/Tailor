@@ -29,7 +29,27 @@ const ANY_TEST_FILE = /\.test\.[cm]?[jt]sx?$/;
 
 // Walked for stray tests. `e2e/` is excluded because Playwright owns it and
 // runs `.spec.ts`; the rest is everything a test could plausibly be written in.
-const SEARCH_DIRS = ["app", "components", "core", "scripts", "tests", "tools"];
+//
+// `adapters` was missing while that tree held only `.gitkeep` files. It holds
+// real source now — the bootstrap routine, the schema module — so a test
+// written beside it would neither run nor be reported, which is the precise
+// silent omission this guard exists to prevent.
+const SEARCH_DIRS = [
+  "adapters",
+  "app",
+  "components",
+  "core",
+  "scripts",
+  "tests",
+  "tools",
+];
+
+// Repo-root modules are outside every one of those directories:
+// `instrumentation.ts` and `drizzle.config.ts` live there, so a
+// `instrumentation.test.mts` beside them would have been invisible too. Read
+// non-recursively — the recursive walks above already cover the subtrees, and
+// descending from the root would drag in `node_modules` and `.next`.
+const ROOT_DIR = ".";
 
 const toPosix = (value) => String(value).split(sep).join(posix.sep);
 
@@ -64,7 +84,17 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-const stray = SEARCH_DIRS.flatMap((dir) => walk(dir) ?? [])
+function rootEntries() {
+  try {
+    return readdirSync(ROOT_DIR, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+const stray = [...SEARCH_DIRS.flatMap((dir) => walk(dir) ?? []), ...rootEntries()]
   .filter((relative) => ANY_TEST_FILE.test(relative))
   .filter((relative) => !files.includes(relative))
   .sort();

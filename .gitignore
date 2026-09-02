@@ -43,6 +43,12 @@ next-env.d.ts
 /data
 /out
 
+# Per-machine configuration: the list of boards this checkout watches. The
+# startup bootstrap creates it only when it is absent, and a human edits it
+# afterwards. Tracked, one developer's board list would arrive in everyone
+# else's checkout and every local edit would show up as a diff.
+/boards.json
+
 # Temporary probe written by scripts/verify-boundaries.mjs; cleaned up on exit.
 __boundary-probe.*
 

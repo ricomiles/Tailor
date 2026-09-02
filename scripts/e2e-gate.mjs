@@ -27,8 +27,15 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 export const MARKER = ".e2e-verified";
 
 /**
- * Everything the rendered assertions can be broken by. Deliberately narrow: a
- * gate that fires on every unrelated edit gets switched off.
+ * Everything `pnpm verify` observes that `pnpm build` cannot. Deliberately
+ * narrow: a gate that fires on every unrelated edit gets switched off.
+ *
+ * Two groups. The first is what the rendered assertions can be broken by. The
+ * second is the server-start path: `scripts/startup-gate.mjs` boots the real
+ * app and asserts it sets up a machine that began empty, and only `pnpm verify`
+ * runs it — so without these entries, deleting the `bootstrap()` call from
+ * `instrumentation.ts` would leave a recorded marker valid and `pnpm build`
+ * green while the app booted into a directory that was never created.
  */
 const OBSERVED = [
   "app/globals.css",
@@ -38,6 +45,9 @@ const OBSERVED = [
   "components/top-bar/labels.ts",
   "e2e/top-bar.spec.ts",
   "playwright.config.ts",
+  "instrumentation.ts",
+  "adapters/db/bootstrap.ts",
+  "scripts/startup-gate.mjs",
 ];
 
 export function observedHash() {

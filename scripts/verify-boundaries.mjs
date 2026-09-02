@@ -35,6 +35,12 @@
  *      import, and `package.json`'s `build` script actually chains that lint
  *      step. (`pnpm build` itself is not spawned here — `build` runs this
  *      script, so that would recurse.)
+ *
+ * Beyond the guardrail, this script carries the project invariants that must
+ * block the build and have nowhere else to live: the script bodies the `build`
+ * chain names, the e2e freshness marker, the ban on `drizzle-kit push`, and the
+ * existence of the migration journal. They are here because `build` runs this
+ * file and runs nothing else that could hold them.
  */
 
 import { ESLint } from "eslint";
@@ -52,6 +58,15 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RESOLVE_EXTENSIONS } from "../eslint.config.mjs";
 import { MARKER, observedHash, recordedHash } from "./e2e-gate.mjs";
+import {
+  DRIZZLE_PUSH,
+  JOURNAL_FILE,
+  MIGRATIONS_DIR,
+  PUSH_SCAN_EXEMPT,
+  findPushScripts,
+  journalProblems,
+  missingMigrationFiles,
+} from "./project-invariants.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURES = join(ROOT, "tools", "boundary-fixtures");
@@ -631,7 +646,8 @@ if (!EXPECTED_BUILD_CHAIN.test(buildScript)) {
 // substitution this guard exists to prevent, one level down.
 const EXPECTED_SCRIPT_BODIES = {
   test: "node scripts/run-tests.mjs",
-  "test:e2e": "playwright test && node scripts/e2e-gate.mjs --record",
+  "test:e2e":
+    "node scripts/startup-gate.mjs && playwright test && node scripts/e2e-gate.mjs --record",
   verify: "node scripts/verify.mjs",
 };
 for (const [name, expected] of Object.entries(EXPECTED_SCRIPT_BODIES)) {
@@ -643,6 +659,133 @@ for (const [name, expected] of Object.entries(EXPECTED_SCRIPT_BODIES)) {
         "would leave every check it names silently absent.",
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// The schema is migrated, never synchronised.
+//
+// The predicates live in `./project-invariants.mjs` so `tests/` can exercise
+// them against violating inputs. Everything below is the part that needs a
+// filesystem: which files to feed them, and what to say when they fire.
+
+// The acceptance criterion reads "package.json **or any config**", so the scan
+// covers both: every script body, and the bodies of the config and build-chain
+// sources that could invoke the CLI without a `package.json` entry at all.
+const pushOffenders = findPushScripts(pkg.scripts).map(
+  (name) => `package.json's "${name}" script`,
+);
+
+const PUSH_SCANNED_SOURCES = [
+  "drizzle.config.ts",
+  ...readdirSync(join(ROOT, "scripts"))
+    .filter((entry) => entry.endsWith(".mjs"))
+    .map((entry) => `scripts/${entry}`),
+].filter((relative) => !PUSH_SCAN_EXEMPT.includes(relative));
+
+for (const relative of PUSH_SCANNED_SOURCES) {
+  // The exempt files are this check and the module declaring its pattern:
+  // naming the forbidden sequence is their job, and scanning them would make
+  // the guardrail fire on itself. `PUSH_SCAN_EXEMPT` is exported and asserted
+  // short in `tests/project-invariants.test.mts`, because an exemption list is
+  // the obvious place to hide a real invocation.
+  if (DRIZZLE_PUSH.test(readFileSync(join(ROOT, relative), "utf8"))) {
+    pushOffenders.push(relative);
+  }
+}
+
+for (const offender of pushOffenders) {
+  fail(
+    `${offender} invokes the drizzle-kit "push" subcommand. Push synchronises a ` +
+      "live database by dropping whatever stands in the way — a column of real " +
+      "posting and run history, in a gitignored file with no backup. Generate a " +
+      "migration with `pnpm db:generate` instead; the startup bootstrap applies it.",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The migration mechanism is one file, and its absence is silent.
+//
+// `drizzle-orm`'s migrator throws only at *runtime*: a journal damaged here
+// would be discovered by whoever next started the app. It is also the file that
+// makes a migrations directory holding no `.sql` valid, which is the state this
+// epic deliberately ships.
+let journal;
+try {
+  journal = JSON.parse(readFileSync(join(ROOT, JOURNAL_FILE), "utf8"));
+} catch (error) {
+  fail(
+    `${JOURNAL_FILE} is missing or unreadable (${error.message}). It is the whole ` +
+      "migration mechanism: drizzle-orm throws `Can't find meta/_journal.json " +
+      "file` without it, so the app would not start.",
+  );
+}
+
+if (journal !== undefined) {
+  for (const problem of journalProblems(journal)) {
+    fail(
+      `${JOURNAL_FILE} ${problem}. drizzle-orm reads this file at every server ` +
+        "start and drizzle-kit rewrites it on every `pnpm db:generate`; a journal " +
+        "that disagrees with either is a journal from some other project.",
+    );
+  }
+
+  // An entry with no `.sql` beside it is the exact shape of committing the
+  // journal without the migration — half a `pnpm db:generate`. drizzle-orm
+  // reports it as `No file <tag>.sql found`, on the developer's machine, long
+  // after the commit that caused it.
+  for (const path of missingMigrationFiles(journal, (relative) =>
+    existsSync(join(ROOT, relative)),
+  )) {
+    fail(
+      `${JOURNAL_FILE} lists a migration whose file is missing: ${path}. ` +
+        "Commit the generated `.sql` alongside the journal, or drop the entry.",
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// One migrations directory, named in three places.
+//
+// `drizzle.config.ts`'s `out` decides where `pnpm db:generate` writes;
+// `adapters/db/bootstrap.ts`'s `MIGRATIONS_FOLDER` decides where the running
+// app reads; `MIGRATIONS_DIR` above decides where the journal check looks.
+// Nothing linked them, so changing `out` alone would land every generated
+// migration in a directory the app never opens — and every check in this file,
+// the journal one included, would still pass while no migration ever ran.
+//
+// Asserted by importing the modules rather than by matching their source text:
+// a regex over a string literal proves what the file says, not what it does.
+const expectedMigrationsDir = resolve(ROOT, MIGRATIONS_DIR);
+try {
+  const { MIGRATIONS_FOLDER } = await import("../adapters/db/bootstrap.ts");
+  if (resolve(MIGRATIONS_FOLDER) !== expectedMigrationsDir) {
+    fail(
+      `adapters/db/bootstrap.ts reads migrations from ${relative(ROOT, MIGRATIONS_FOLDER)}, ` +
+        `but the journal check and drizzle-kit use ${MIGRATIONS_DIR}. A migration ` +
+        "generated into one and read from the other never runs.",
+    );
+  }
+
+  const drizzleConfig = (await import("../drizzle.config.ts")).default;
+  if (resolve(ROOT, drizzleConfig.out ?? "") !== expectedMigrationsDir) {
+    fail(
+      `drizzle.config.ts generates into "${drizzleConfig.out}", which is not ` +
+        `${MIGRATIONS_DIR}. \`pnpm db:generate\` would write where the app never looks.`,
+    );
+  }
+  if (resolve(ROOT, drizzleConfig.schema ?? "") !== resolve(ROOT, "adapters/db/schema.ts")) {
+    fail(
+      `drizzle.config.ts diffs against "${drizzleConfig.schema}", not ` +
+        "adapters/db/schema.ts, so a table added to the schema module would " +
+        "generate no migration.",
+    );
+  }
+} catch (error) {
+  fail(
+    "Could not read the migrations directory back from adapters/db/bootstrap.ts " +
+      `and drizzle.config.ts (${error.message}). Both must be importable for the ` +
+      "three declarations of that path to be checkable against each other.",
+  );
 }
 
 // Pinning `verify`'s name is not enough now that it is a script file rather
@@ -677,18 +820,19 @@ if (process.env.TAILOR_E2E_GATE === "off") {
   const recorded = recordedHash();
   if (recorded === null) {
     fail(
-      `The Playwright suite has never recorded a run (no ${MARKER}). ` +
-        "Run `pnpm verify` — `pnpm build` alone never renders the app, so " +
-        "nothing has checked the 39px contract, the colour tokens, or the " +
-        "loaded font faces.",
+      `\`pnpm verify\` has never recorded a run (no ${MARKER}). Run it — ` +
+        "`pnpm build` alone never renders the app and never starts it, so " +
+        "nothing has checked the 39px contract, the colour tokens, the loaded " +
+        "font faces, or that a server start sets up a clean machine.",
     );
   } else if (recorded !== observed) {
     fail(
-      `The Playwright suite last ran against ${recorded.slice(0, 12)}, but the ` +
-        `sources it observes now hash to ${observed.slice(0, 12)}. Run ` +
-        "`pnpm verify`: the rendered assertions — the 39px border-box Epic 2 " +
-        "pins its action bar against, the divider, the colour tokens, the " +
-        "loaded font faces, the body reset — have not seen this code.",
+      `\`pnpm verify\` last ran against ${recorded.slice(0, 12)}, but the ` +
+        `sources it observes now hash to ${observed.slice(0, 12)}. Run it: the ` +
+        "rendered assertions — the 39px border-box Epic 2 pins its action bar " +
+        "against, the divider, the colour tokens, the loaded font faces, the " +
+        "body reset — and the startup gate, which boots the app on an empty " +
+        "directory and checks it sets itself up, have not seen this code.",
     );
   }
 }
