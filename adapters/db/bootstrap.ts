@@ -65,6 +65,17 @@ import { TailorError } from "../../core/errors/tailor-error.ts";
  * create one directory and `linkSync` write into another that does not exist.
  */
 const DATA_DIRECTORY = dirname(CANON_FILE);
+
+// A `CANON_FILE` with no separator would make `dirname` return ".", putting the
+// database at the repo root instead of inside the gitignored data directory —
+// where `startup-gate.mjs` and `run-tests.mjs` would still be watching for it.
+if (DATA_DIRECTORY === "." || DATA_DIRECTORY === "") {
+  throw new TailorError(
+    ERROR_CODES.internal,
+    `CANON_FILE ("${CANON_FILE}") must name a path inside a directory; every ` +
+      "artifact this routine creates is placed relative to that directory.",
+  );
+}
 const DATABASE_FILE = join(DATA_DIRECTORY, "tailor.db");
 const BOARDS_FILE = "boards.json";
 

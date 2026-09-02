@@ -133,20 +133,45 @@ const basicsScalarString = z
   .transform((value) => (value === CANON_SENTINEL ? undefined : value));
 
 /**
- * Authored prose — a bullet's claim, a summary — checked for emptiness and
- * **never mutated**.
+ * A non-blank string, returned exactly as authored.
  *
- * `.refine()` rather than `.trim()`: a placeholder token inside a bullet's
- * `text` must come back byte-identical, and Epic 4 shows it unchanged. A
- * trimming schema would rewrite the very string the fill-metric write path
- * later substitutes into.
+ * `.refine()` rather than `.trim()`, and this is the whole normalisation rule
+ * stated once: **outside the scalar `basics` fields, nothing is rewritten.**
+ * The value that comes out of a parse is the value that was in the file, byte
+ * for byte.
+ *
+ * An earlier draft used `z.string().trim().min(1)` here — the pattern
+ * `core/boards/boards-file.ts` establishes, and correct there. It is wrong on
+ * canon: it silently trimmed `profiles[].username`, `profiles[].url` and
+ * `rendering.template`, three fields the story's own boundary names as having
+ * to come back untouched. Nothing broke, because the shipped file happens to
+ * carry no padded value and so no fixture did either — which is exactly how a
+ * contract rots without a test noticing.
+ *
+ * Blank is still refused. An empty or whitespace-only value is damage, not
+ * authorship, and it is refused rather than repaired: bootstrap has no write
+ * path to canon and neither does this module.
  */
-const authoredText = z
+const preservedString = z
   .string()
   .refine((value) => value.trim().length > 0, "must not be blank");
 
-/** A plain, trimmed, non-empty string: the default for everything structural. */
-const token = z.string().trim().min(1);
+/**
+ * Authored prose — a bullet's claim, a summary, an exclusion rule.
+ *
+ * A placeholder token inside a bullet's `text` must come back byte-identical,
+ * and Epic 4 substitutes into that very string.
+ */
+const authoredText = preservedString;
+
+/**
+ * Everything structural: ids, tags, org names, dates, categories.
+ *
+ * The same guarantee as `authoredText`, kept under its own name because the two
+ * say different things to a reader — one is prose a human wrote to be read, the
+ * other is a token something else resolves against. Neither is ever rewritten.
+ */
+const token = preservedString;
 
 /**
  * Where the resume says its author is.

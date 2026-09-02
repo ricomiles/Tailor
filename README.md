@@ -132,7 +132,11 @@ is enforced, not asserted — `verify:boundaries` scans every app source, the re
 root included, and fails the build naming any second reader. Three files are
 exempt and each is pinned by a test: the gateway, `adapters/db/bootstrap.ts`
 (which creates the file without ever parsing it), and `core/canon/canon-document.ts`
-(which declares the path). The build-chain scripts under `scripts/` spell the
+(which declares the path). `tests/` is outside the scan altogether — both suites
+build canon-shaped fixtures by path, so banning the name there would delete
+them; nothing but convention stops a future test from parsing canon itself.
+The scan reports a *reach* rather than a mention: naming `resume.canon.json` in
+user-facing copy is required by the design language and is not a violation. The build-chain scripts under `scripts/` spell the
 path too, and are outside the scan deliberately: `run-tests.mjs` and
 `startup-gate.mjs` watch that exact file to prove the suite never touched it and
 that a real boot creates it. Banning the name there would delete those checks.

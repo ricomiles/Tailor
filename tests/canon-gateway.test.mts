@@ -35,7 +35,10 @@ const roots: string[] = [];
 
 function makeRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "tailor-canon-"));
-  mkdirSync(join(root, "data"));
+  // Derived from the constant rather than spelling `data` again: this suite
+  // exists to prove one declaration of that path, and a second one here would
+  // fail the whole file with an opaque ENOENT the day the first one moves.
+  mkdirSync(join(root, dirname(CANON_FILE)), { recursive: true });
   roots.push(root);
   return root;
 }
@@ -297,6 +300,12 @@ test("the default root is the process's working directory", () => {
   // no argument. Exercised by moving the working directory to a temp root, so
   // the real `./data` is never opened — `scripts/run-tests.mjs` fails the build
   // if it were.
+  // `process.chdir` is process-global and unavailable in worker threads. The
+  // runner gives each test *file* its own process and runs a file's tests in
+  // order, which is what makes this safe — asserted rather than assumed, so a
+  // runner change surfaces here instead of as a mystery failure elsewhere.
+  assert.equal(typeof process.chdir, "function", "this runner cannot chdir");
+
   const root = rootHolding(seedDocument());
   const original = process.cwd();
   try {
@@ -305,4 +314,5 @@ test("the default root is the process's working directory", () => {
   } finally {
     process.chdir(original);
   }
+  assert.equal(process.cwd(), original, "the working directory was restored");
 });

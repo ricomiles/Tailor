@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -19,6 +19,7 @@ import {
   PROBE_PREFIX,
   canonScanPaths,
   codeOnly,
+  unscannedSourceTrees,
   findCanonReaders,
   missingMigrationFiles,
   orphanMigrationFiles,
@@ -453,6 +454,67 @@ test("offenders come back sorted, so build output does not depend on directory o
   );
 });
 
+test("user-facing copy naming the file is not a violation — the epic's copy rule requires it", () => {
+  // `epic-1-context.md` fixes that every user-facing reference to the resume
+  // source names `resume.canon.json`. The minimal form of obeying that is the
+  // bare name in quotes — a label, a `title`, an item in a list — and an
+  // earlier pattern matched all three, so the first component following the
+  // copy rule would have failed the build telling it to call `readCanon()`,
+  // with no escape but widening an exemption list two tests pin to three.
+  assert.deepEqual(
+    findCanonReaders([
+      { name: "components/badge.tsx", body: `export const SOURCE_LABEL = "${CANON_FILE_NAME}";` },
+      { name: "components/empty.tsx", body: `export const E = () => <p title="${CANON_FILE_NAME}">source</p>;` },
+      { name: "app/blocked/page.tsx", body: `const files = ["${CANON_FILE_NAME}"];` },
+    ]),
+    [],
+  );
+});
+
+test("a bare name beside a reaching call is a reader, not a label", () => {
+  // `join(root, "data", "resume.canon.json")` carries no separator of its own,
+  // and is the spelling a second reader following this repo's conventions
+  // would actually use.
+  assert.deepEqual(
+    findCanonReaders([
+      { name: "app/a.ts", body: `readFileSync(join(root, "data", "${CANON_FILE_NAME}"))` },
+    ]),
+    ["app/a.ts"],
+  );
+});
+
+test("a template literal and an import specifier are both reported", () => {
+  // Both forms the pattern's doc advertises, neither of which had a test.
+  assert.deepEqual(
+    findCanonReaders([
+      { name: "app/t.ts", body: "const p = `${root}/data/" + CANON_FILE_NAME + "`;" },
+      { name: "app/i.ts", body: `import canon from "../../data/${CANON_FILE_NAME}";` },
+    ]),
+    ["app/i.ts", "app/t.ts"],
+  );
+});
+
+test("a line that opens with a block comment still has its code scanned", () => {
+  // The under-reporting hole: stripping whole comment *lines* dropped the real
+  // code that followed one, so a second reader spelled this way shipped green.
+  // The module's own doc had claimed the imprecision could only over-report.
+  assert.deepEqual(
+    findCanonReaders([
+      { name: "app/legacy.ts", body: `/* legacy */ const p = "data/${CANON_FILE_NAME}";` },
+    ]),
+    ["app/legacy.ts"],
+  );
+});
+
+test("the body of a block comment is not code", () => {
+  assert.deepEqual(
+    findCanonReaders([
+      { name: "core/notes.ts", body: `/*\n  see "data/${CANON_FILE_NAME}"\n*/\nexport const x = 1;` },
+    ]),
+    [],
+  );
+});
+
 test("prose naming the file is not a violation — the epic's copy rule requires it", () => {
   // `epic-1-context.md` fixes that every user-facing reference to the resume
   // source names `resume.canon.json`. A scan matching any occurrence would turn
@@ -547,9 +609,45 @@ test("a missing tree contributes nothing rather than throwing", () => {
   assert.deepEqual(canonScanPaths(() => [], () => []), []);
 });
 
-test("an empty gather is a failure, not a pass", () => {
-  // A renamed directory or a narrowed extension pattern must not shrink the
-  // scanned set to nothing while the success sentence still reads green.
-  const source = readFileSync(join(REPO_ROOT, "scripts/verify-boundaries.mjs"), "utf8");
-  assert.ok(source.includes("canonSources.length === 0"));
+test("a top-level source tree outside the scan is reported", () => {
+  // The round-1 failure was a source tree the scan never reached. The guard
+  // written against it lived imperatively in the verifier, where deleting it
+  // failed nothing — the same shape one level up. This drives the predicate.
+  assert.deepEqual(
+    unscannedSourceTrees(() => [...CANON_SCAN_DIRS, "lib", "server"], ["scripts", "tests"]),
+    ["lib", "server"],
+  );
+});
+
+test("the scanned trees and the excused ones are both accounted for", () => {
+  assert.deepEqual(
+    unscannedSourceTrees(() => [...CANON_SCAN_DIRS, "scripts", "tests", "node_modules"], [
+      "scripts",
+      "tests",
+      "node_modules",
+    ]),
+    [],
+  );
+});
+
+test("dot- and underscore-prefixed directories are not source trees", () => {
+  assert.deepEqual(
+    unscannedSourceTrees(() => [".next", ".git", "_bmad", "_bmad-output"], []),
+    [],
+  );
+});
+
+test("the verifier's own root listing is fully accounted for today", () => {
+  // The real repo, not a fixture: if someone adds a top-level directory and
+  // neither scans nor excuses it, this fails here as well as in the build.
+  const ignored = readFileSync(join(REPO_ROOT, "scripts/verify-boundaries.mjs"), "utf8")
+    .split("const IGNORED_TREES = new Set([")[1]
+    .split("]);")[0]
+    .match(/"([^"]+)"/g)!
+    .map((quoted) => quoted.slice(1, -1));
+  const dirs = readdirSync(REPO_ROOT, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+
+  assert.deepEqual(unscannedSourceTrees(() => dirs, ignored), []);
 });

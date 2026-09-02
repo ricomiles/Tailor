@@ -232,7 +232,7 @@ Three review layers over the story-1.4 diff. Everything mechanically fixable was
 ## Deferred from: code review of story-1.4 (2026-08-29)
 
 - **Inbound HTTP types are unconstrained under `core/`.** The invariant is stated as "errors flow one direction", but only the outbound half is policed. `Request`, `Headers`, `NextRequest` and `URLSearchParams` are globals or imports that put transport shape into `core/` just as directly — verified: `export function h(req: Request): Headers { return req.headers; }` lints clean under `core/` today. Deferred because closing it means a new prohibition class rather than a fix to this story's two rules, and the spec's "Ask First" list scopes this story to what the translator needs. The story that first defines a `Port` taking a request-shaped input is where this becomes load-bearing.
-- **`core/errors/` is not in the epic's listed core subdirectories.** `epic-1-context.md` says `core/` contains `ports/`, `canon/`, `pipeline/`, `validation/`, `diff/`, `scoring/`, `gates/`. Story 1.3 already added `core/boards/` without amending it, so the list is non-exhaustive in practice. Deferred as a planning-doc amendment, not a code change — worth folding into the epic-1 retrospective rather than patching one story's spec.
+- **`core/errors/` is not in the epic's listed core subdirectories.** **Closed 2026-09-03 (spec-1-6):** the epic-1 context now lists all ten `core/` subdirectories, `errors`, `boards` and `bootstrap` included. `epic-1-context.md` says `core/` contains `ports/`, `canon/`, `pipeline/`, `validation/`, `diff/`, `scoring/`, `gates/`. Story 1.3 already added `core/boards/` without amending it, so the list is non-exhaustive in practice. Deferred as a planning-doc amendment, not a code change — worth folding into the epic-1 retrospective rather than patching one story's spec.
 - **Commit `e3aaa18`'s message miscounts its own fixtures.** It claims "11 new fixtures, one shape each"; `git show --name-status` shows 17 added under `tools/boundary-fixtures/core/canon/` (15 violating, 2 clean). Deferred rather than patched because the commit is already pushed to `origin/main` and amending it would rewrite published history for a cosmetic miscount.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-5-start-the-app-on-a-clean-machine-and-have-it-set-itself-up.md`
@@ -270,7 +270,7 @@ Three review layers over the story-1.4 diff. Everything mechanically fixable was
 ## Deferred from: code review of spec-1-6-read-the-canonical-resume-through-a-single-gateway.md (2026-09-02)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md`
-  summary: Four `scripts/` files spell `data/resume.canon.json` independently of the core declaration.
+  summary: Three `scripts/` files spell `data/resume.canon.json` independently of the core declaration.
   evidence: `scripts/startup-gate.mjs` (several sites), `scripts/run-tests.mjs:131` and `scripts/verify.mjs:33` each hold the literal. Story 1.6 makes `CANON_FILE` the single declaration for *app source*, but the build-chain scripts cannot import a `.ts` module without the type stripper, so changing the path would desynchronise the startup gate from the app. Pre-existing — every one of those literals predates this story.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md`
@@ -292,3 +292,21 @@ Three review layers over the story-1.4 diff. Everything mechanically fixable was
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md`
   summary: The single-reader scan cannot cover `tests/`, which the spec's frozen Never clause names.
   evidence: The frozen constraint bans "a test helper that reads it directly rather than through the gateway", but `tests/` is excluded from `CANON_SCAN_DIRS` by necessity — `tests/canon-gateway.test.mts` writes canon-shaped fixtures by path, and `tests/bootstrap.test.mts` asserts the seeded copy byte-for-byte, so banning the spelling there would delete both suites. Today no test parses canon with anything but `readCanon()`; nothing mechanically holds that. Closing it properly needs a narrower rule — flagging a *parse* of the file rather than a mention of its name — which is a scan the current text-matching design cannot express.
+
+## Deferred from: code review of spec-1-6-read-the-canonical-resume-through-a-single-gateway.md (2026-09-03)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md`
+  summary: Empty `work`, `bullets` and `summaries` arrays parse clean, so a truncated canon renders a blank resume with no error.
+  evidence: `canonDocumentSchema` declares `z.array(...)` with no `.min(1)` anywhere. A half-finished hand-edit that leaves `work: []` is a valid document by the contract. Deferred rather than fixed here because Story 1.8's render-readiness gate is where an unrenderable canon is meant to be refused with a list of reasons, and a parse error would pre-empt that with a worse message.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md`
+  summary: `e2e/` is inside the single-reader scan while `tests/` is exempt, and nothing records why the two differ.
+  evidence: `CANON_SCAN_DIRS` includes `e2e`; `tests/` is excluded because both unit suites write canon-shaped fixtures by path. But `e2e/` is, per the README's own Layout, "the only suite that renders the app" — Stories 1.7 and 1.9 will need a canon fixture there and will hit the same wall, with only a three-entry `CANON_READ_EXEMPT` (pinned by `deepEqual` in two tests) as the escape. Decide the rule before that story, not during it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md`
+  summary: `epic-1-context.md` was rewritten by 36 lines inside the Story 1.6 implementation commit.
+  evidence: Commit `22d9290` edits a shared context document that the spec names as a frozen `context:` input, and the change appears in neither the Code Map nor Tasks & Acceptance. The provenance is known — a `compile-epic-context` regeneration run during planning, triggered because a one-line seed-path fix made `epics.md` newer than the cached context — but several edits are substantive and govern later stories ("Output lands under `./out`", "a 1px `neutral-400` rule", "loaded via Google Fonts"). Worth a deliberate diff review against `epics.md` before Story 1.7 builds on it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md`
+  summary: `canon-contract.md` still says canon is loaded and parsed once per tailoring run, which the shipped gateway contradicts.
+  evidence: The companion's Access rules read "Load and parse **once per tailoring run**". Story 1.6's frozen Always says the opposite — "Every read re-opens and re-parses the file. No memoization, no module-level cache, no invalidation hook" — and `epic-1-context.md` agrees. The code is right and the companion is stale, but Epic 3's tailoring-run story will read that sentence as its contract. Same file, secondary: the contract pins `schemaVersion: "1.0"` while `canonDocumentSchema` accepts any non-empty string. Deferred because amending a spec companion is a planning-artifact decision, not an implementation one.

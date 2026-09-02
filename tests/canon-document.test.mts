@@ -13,8 +13,11 @@ import {
   bulletSchema,
   canonDocumentSchema,
   educationEntrySchema,
+  excludedSchema,
   profileSchema,
   renderingSchema,
+  skillGroupSchema,
+  summarySchema,
   workEntrySchema,
 } from "../core/canon/canon-document.ts";
 
@@ -59,6 +62,57 @@ test("the sentinel, the path and the statuses are declared here", () => {
   assert.equal(CANON_SENTINEL, "TODO");
   assert.equal(CANON_FILE, "data/resume.canon.json");
   assert.deepEqual([...BULLET_STATUSES], ["needs-number", "needs-content"]);
+});
+
+test("the module's export surface is pinned, so it cannot grow unnoticed", async () => {
+  // The gateway has "exposes reads and nothing else"; this module had nothing.
+  // A cross-unit contract that can gain exports silently is one nobody can
+  // reason about from the outside.
+  const contract = await import("../core/canon/canon-document.ts");
+  assert.deepEqual(Object.keys(contract).sort(), [
+    "BULLET_STATUSES",
+    "CANON_FILE",
+    "CANON_SENTINEL",
+    "PROFILE_INCLUDES",
+    "WORK_INCLUDES",
+    "basicsSchema",
+    "bulletSchema",
+    "bulletStatusSchema",
+    "bulletsPerRoleSchema",
+    "canonDocumentSchema",
+    "educationEntrySchema",
+    "excludedSchema",
+    "locationSchema",
+    "pdfRenderingSchema",
+    "profileIncludeSchema",
+    "profileSchema",
+    "renderingSchema",
+    "skillGroupSchema",
+    "summarySchema",
+    "workEntrySchema",
+    "workIncludeSchema",
+  ]);
+});
+
+test("a summary and an exclusion rule are authored prose, never rewritten", () => {
+  // Both use `authoredText` and neither was exercised, so the no-trim
+  // guarantee was unverified in two of the three places it applies.
+  const summary = summarySchema.parse({ id: "sum-1", tags: ["web3"], text: "  led a team  " });
+  assert.equal(summary.text, "  led a team  ");
+
+  const excluded = excludedSchema.parse({ skills: ["  x  "], rules: ["  never claim a number  "] });
+  assert.deepEqual(excluded.rules, ["  never claim a number  "]);
+  assert.deepEqual(excluded.skills, ["  x  "]);
+
+  assert.throws(() => summarySchema.parse({ id: "s", tags: [], text: "   " }));
+});
+
+test("a skill group's weight obeys the same 1-5 contract a bullet's does", () => {
+  const group = { id: "sk-1", category: "Languages", items: ["TypeScript"], weight: 3 };
+  for (const weight of [0, 6, 2.5]) {
+    assert.throws(() => skillGroupSchema.parse({ ...group, weight }), String(weight));
+  }
+  assert.equal(skillGroupSchema.parse(group).weight, 3);
 });
 
 test("the status tuple cannot be spliced out from under a consumer", () => {
@@ -153,6 +207,40 @@ test("a sentinel outside scalar basics is returned verbatim", () => {
 
   const rendering = renderingSchema.parse(seedDocument().rendering);
   assert.equal(rendering.template, "TODO — typst | latex | html");
+});
+
+test("padding survives on every field outside scalar basics", () => {
+  // The frozen rule: nothing outside the scalar `basics` fields is rewritten.
+  // An earlier draft used `z.string().trim().min(1)` for all of these — the
+  // pattern `core/boards/boards-file.ts` establishes, and correct there — which
+  // silently trimmed two of the three fields the boundary names by hand. Every
+  // fixture happened to be unpadded, so 191 tests agreed with a false contract.
+  const profile = profileSchema.parse({
+    network: " LinkedIn ",
+    username: `  ${CANON_SENTINEL}  `,
+    url: `  ${CANON_SENTINEL} `,
+    include: "never",
+  });
+  assert.equal(profile.username, `  ${CANON_SENTINEL}  `);
+  assert.equal(profile.url, `  ${CANON_SENTINEL} `);
+  assert.equal(profile.network, " LinkedIn ");
+
+  const rendering = seedDocument().rendering;
+  assert.equal(
+    renderingSchema.parse({ ...rendering, template: "  TODO — typst  " }).template,
+    "  TODO — typst  ",
+  );
+
+  const bullet = bulletSchema.parse({ ...BULLET, id: " b-1 ", tags: [" perf "] });
+  assert.equal(bullet.id, " b-1 ");
+  assert.deepEqual(bullet.tags, [" perf "]);
+});
+
+test("a blank structural string is still refused, not repaired", () => {
+  assert.throws(() => bulletSchema.parse({ ...BULLET, id: "   " }));
+  assert.throws(() =>
+    profileSchema.parse({ network: "x", username: "", url: "u", include: "never" }),
+  );
 });
 
 test("a placeholder token inside a bullet's text is returned byte-identical", () => {

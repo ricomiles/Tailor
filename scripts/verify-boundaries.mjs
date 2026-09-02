@@ -67,6 +67,7 @@ import {
   CANON_SCAN_DIRS,
   PROBE_PREFIX,
   canonScanPaths,
+  unscannedSourceTrees,
   projectInvariantProblems,
 } from "./project-invariants.mjs";
 
@@ -736,8 +737,15 @@ const canonPaths = canonScanPaths(
   },
   () => {
     try {
+      // `isFile()` is false for a symlink, so a symlinked module at the repo
+      // root would otherwise escape the scan entirely.
       return readdirSync(ROOT, { withFileTypes: true })
-        .filter((entry) => entry.isFile())
+        .filter(
+          (entry) =>
+            entry.isFile() ||
+            (entry.isSymbolicLink() &&
+              statSync(join(ROOT, entry.name), { throwIfNoEntry: false })?.isFile()),
+        )
         .map((entry) => entry.name);
     } catch (error) {
       fail(`The repo root could not be listed for canon reads (${error.message}).`);
@@ -773,28 +781,46 @@ for (const name of canonPaths) {
 //  - `node_modules`, `data`, `out`, `test-results` are generated or runtime
 //    state, none of it this repo's source.
 const IGNORED_TREES = new Set([
+  // Legitimately spell the path: `run-tests.mjs` and `startup-gate.mjs` watch
+  // the real file, and the suites build fixtures. Banning the name would
+  // delete those checks.
   "scripts",
   "tests",
+  // Dependencies, runtime state, and build or report output — none of it this
+  // repo's source. `out`, `playwright-report`, `blob-report` and `coverage` do
+  // not exist today; they are listed so a config change that starts producing
+  // one does not fail the build with a message about source trees.
   "node_modules",
   "data",
   "out",
-  "public",
   "test-results",
+  "playwright-report",
+  "blob-report",
+  "coverage",
 ]);
-for (const entry of readdirSync(ROOT, { withFileTypes: true })) {
-  if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name.startsWith("_")) continue;
-  if (IGNORED_TREES.has(entry.name) || CANON_SCAN_DIRS.includes(entry.name)) continue;
+let rootDirs;
+try {
+  rootDirs = readdirSync(ROOT, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+} catch (error) {
+  fail(`The repo root could not be listed for unscanned source trees (${error.message}).`);
+  rootDirs = [];
+}
+
+for (const name of unscannedSourceTrees(() => rootDirs, IGNORED_TREES)) {
   fail(
-    `${entry.name}/ holds source but is not in CANON_SCAN_DIRS, so the ` +
-      "single-reader rule does not reach it. Add it there, or add it to the " +
-      "ignore list here with a reason.",
+    `${name}/ holds source but is not in CANON_SCAN_DIRS, so the ` +
+      "single-reader rule does not reach it. Add it there, or add it to " +
+      "IGNORED_TREES here with a reason.",
   );
 }
 
 if (canonSources.length === 0) {
   fail(
-    "The canon-reader scan gathered no app sources at all. Until this is " +
-      "fixed, the single-reader invariant is not being enforced.",
+    `The canon-reader scan gathered no app sources at all — not from ${CANON_SCAN_DIRS.join(", ")}, ` +
+      "nor from the repo root. Until this is fixed, the single-reader " +
+      "invariant is not being enforced.",
   );
 }
 
@@ -803,7 +829,7 @@ if (canonSources.length === 0) {
 // import a `.ts` module, so the two spellings are held together here — and this
 // is the check its doc comment promises.
 const canonDeclaration = readFileSync(join(ROOT, "core/canon/canon-document.ts"), "utf8");
-if (!canonDeclaration.includes(`/${CANON_FILE_NAME}"`)) {
+if (!new RegExp(`export const CANON_FILE\\s*=\\s*(['"\`])[^'"\`]*/${CANON_FILE_NAME.replace(/\./g, "\\.")}\\1`).test(canonDeclaration)) {
   fail(
     `core/canon/canon-document.ts no longer declares a path ending in ` +
       `${CANON_FILE_NAME}, which is the name scripts/project-invariants.mjs ` +
@@ -813,9 +839,9 @@ if (!canonDeclaration.includes(`/${CANON_FILE_NAME}"`)) {
 
 // Every exemption must name a file that exists: a stale entry left behind by a
 // rename holds a slot open for whatever lands at that path next.
-for (const relative of CANON_READ_EXEMPT) {
-  if (!existsSync(join(ROOT, relative))) {
-    fail(`${relative} is exempt from the canon-reader scan but does not exist.`);
+for (const exempt of CANON_READ_EXEMPT) {
+  if (!existsSync(join(ROOT, exempt))) {
+    fail(`${exempt} is exempt from the canon-reader scan but does not exist.`);
   }
 }
 

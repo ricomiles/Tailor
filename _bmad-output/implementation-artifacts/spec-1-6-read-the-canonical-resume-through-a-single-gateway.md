@@ -92,11 +92,77 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md', '_bmad-outp
 - Given `pnpm test` followed by `git status`, then the working tree is clean and `./data` is untouched — the suite wrote only into temp roots.
 - Given `pnpm build`, `pnpm lint`, `pnpm typecheck` and `pnpm verify`, then each exits 0.
 
+### Review Findings — round 3 (code review, 2026-09-03)
+
+_Four layers: blind-hunter, edge-case-hunter, verification-gap, acceptance-auditor. The first three had already run twice inside the build workflow; the acceptance-auditor ran here for the first time. None failed._
+
+- [x] [Review][Decision] **`token` trims fields the frozen `Never` clause says must come back untouched** — `core/canon/canon-document.ts:149` declares `token = z.string().trim().min(1)`, used for `profiles[].username`, `profiles[].url`, `rendering.template`, `excluded.skills[]`, `schemaVersion`, and every id, tag, company and date. Measured: `"  TODO  "` → `"TODO"` for username and url; the padded template comes back trimmed. Bullet and summary text correctly use `.refine()` and are byte-preserved. The frozen **Never** names `profiles[].username` and `rendering.template` explicitly, and the matrix row "Sentinel outside scalar basics" says "returned verbatim" — but the Code Map separately mandates `z.string().trim().min(1)` as the boards-file pattern to copy, so the frozen text and the Code Map are in direct tension and the resolution was made silently. No behavioural break today: the shipped canon has no padded values, and no test would notice because every fixture is unpadded. **Resolved (a):** structural strings now use the same non-mutating schema authored prose does, so the frozen text holds as written. A padded value comes back exactly as authored rather than being rejected — a hand-authored canon cannot be made unreadable by a stray space — and blank is still refused.
+
+- [x] [Review][Patch] **The single-reader scan blocks the user-facing copy the epic mandates** [scripts/project-invariants.mjs:393]
+- [x] [Review][Patch] **`codeOnly()` drops real code on a line that opens with an inline block comment, so a second reader ships green** [scripts/project-invariants.mjs:367]
+- [x] [Review][Patch] **The new-top-level-directory guard is untested and imperative in the verifier, not a pure predicate** [scripts/verify-boundaries.mjs:783]
+- [x] [Review][Patch] **"An empty gather is a failure" asserts source text over a guard that cannot fire** [tests/project-invariants.test.mts:551]
+- [x] [Review][Patch] **The core-declaration pin is a whole-file substring a comment satisfies, and is untested** [scripts/verify-boundaries.mjs:806]
+- [x] [Review][Patch] **A hand-authored `$comment_*` key other than the two declared makes every read throw** [core/canon/canon-document.ts:110]
+- [x] [Review][Patch] **`canon-contract.md`'s "load and parse once per tailoring run" contradicts the shipped no-cache model and was neither amended nor recorded** [_bmad-output/specs/spec-tailor/canon-contract.md]
+- [x] [Review][Patch] **README claims byte-identity for two fields that are trimmed** [README.md:166]
+- [x] [Review][Patch] **README never says `tests/` is outside the scan, so it teaches a stronger rule than the one enforced** [README.md:130]
+- [x] [Review][Patch] **Two advertised match forms — template literal and import specifier — have no test** [tests/project-invariants.test.mts:425]
+- [x] [Review][Patch] **`relative` from `node:path` is shadowed by the exemption loop variable** [scripts/verify-boundaries.mjs:816]
+- [x] [Review][Patch] **`IGNORED_TREES` lists `public` and `out`, which do not exist, and gives no reason for `public`; a future `playwright-report/` or `coverage/` would fail the build** [scripts/verify-boundaries.mjs:775]
+- [x] [Review][Patch] **`makeRoot` hardcodes `data/` instead of deriving the directory from `CANON_FILE`** [tests/canon-gateway.test.mts:37]
+- [x] [Review][Patch] **A `CANON_FILE` with no separator would put `tailor.db` at the repo root** [adapters/db/bootstrap.ts:67]
+- [x] [Review][Patch] **`core/canon/canon-document.ts` has no export-surface pin, unlike the gateway** [tests/canon-document.test.mts:50]
+- [x] [Review][Patch] **`summarySchema`, `excluded.rules[]` and `skillGroupSchema.weight` are never exercised** [tests/canon-document.test.mts:1]
+- [x] [Review][Patch] **The default-root test mutates process-global state without pinning the runner assumptions that make it safe** [tests/canon-gateway.test.mts:294]
+- [x] [Review][Patch] **Two Suggested Review Order anchors point at comment lines rather than the construct they describe** [_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md]
+- [x] [Review][Patch] **A `deferred-work.md` entry says "Four `scripts/` files" and names three** [_bmad-output/implementation-artifacts/deferred-work.md]
+- [x] [Review][Patch] **A `deferred-work.md` entry resolved by this change is left standing as open** [_bmad-output/implementation-artifacts/deferred-work.md]
+- [x] [Review][Patch] **A symlinked file at the repo root escapes the scan — `isFile()` is false for a symlink** [scripts/verify-boundaries.mjs:739]
+
+- [x] [Review][Defer] **Empty `work`, `bullets` and `summaries` arrays parse clean** [core/canon/canon-document.ts:373] — deferred, pre-existing scope: Story 1.8's readiness gate is where an unrenderable canon is meant to be refused
+- [x] [Review][Defer] **`e2e/` is scanned while `tests/` is exempt, with no reason recorded for the asymmetry** [scripts/project-invariants.mjs:292] — deferred: Stories 1.7 and 1.9 are the first to need a canon fixture under `e2e/` and will hit the wall with only a three-entry exemption list as the escape
+- [x] [Review][Defer] **`epic-1-context.md` was edited by 36 lines inside a story commit, declared in neither the Code Map nor Tasks** [_bmad-output/implementation-artifacts/epic-1-context.md] — deferred, and the provenance is known: it is a `compile-epic-context` regeneration run during planning, not an implementation edit. Several changes are substantive and govern later stories
+
 ## Spec Change Log
 
 - **2026-09-02 — Round 1: the single-reader guardrail did not reach the repo root, and the schema silently swallowed typos.** Two findings, both demonstrated against the built code. (1) The Code Map enumerated the scan as `core/`, `adapters/`, `app/`, `components/`, which leaves `instrumentation.ts` — the server-start hook that already imports the bootstrap adapter — outside it; a canon read added there passes `pnpm test`, `pnpm verify:boundaries` and `pnpm build`, so AC 1 was not what shipped. The push ban made the mirror-image mistake and `verify-boundaries.mjs:670-674` already records it. (2) The schemas used Zod's default `z.object`, which strips unknown keys: `bulletSchema.parse({… staus: "needs-number"})` succeeds and returns a bullet with **no** `status`, silently disarming Story 1.8's readiness gate on the irreplaceable hand-authored file. The Design Notes had anticipated the class of failure ("a loose object would silently accept real drift") without ever saying `.strict()`. Amended: the scan covers the repo root and fails on an empty gather; every object schema is strict; the reference pattern must not fire on user-facing copy, which collides with the epic's own copy rule. Known-bad state avoided: a guardrail that reports "intact" while the two things it guards are both reachable.
 
   **KEEP** — these survived review and must survive re-derivation: the `core/canon/` + `adapters/canon/` split with no `CanonPort`; normalization living *inside* the parse so no caller can skip it; `readCanon(root = process.cwd())` with the root as a parameter; the single private `failed()` wrapper and the TailorError-only contract; `CANON_FILE` declared in core and imported by bootstrap; the canon check composed **before** the journal early return; the tripwire line pinning the verifier's call arguments; `.refine()` rather than `.trim()` on bullet and summary text, so bullet text is never mutated; the wider `CANON_SCANNABLE` pattern that includes `.tsx`; and adding `core/canon/canon-document.ts` to `e2e-gate.mjs`'s `OBSERVED`, which was not in the Code Map and was the right call.
+
+### Round 3 (2026-09-03)
+
+- **`token` trimmed two of the three fields the frozen `Never` clause names.**
+  `z.string().trim().min(1)` — correct for `boards-file.ts`, wrong for canon —
+  silently rewrote `profiles[].username`, `profiles[].url` and
+  `rendering.template`, plus every id, tag, date and org name. The frozen text
+  says nothing outside scalar `basics` is normalised; the Code Map separately
+  mandated the trimming pattern, so the spec contradicted itself and the
+  implementation resolved it silently. Resolved by the human in favour of the
+  frozen text: structural strings now use the same non-mutating schema authored
+  prose does, and a padded value comes back exactly as authored rather than
+  being rejected — a hand-authored canon cannot be made unreadable by a stray
+  space. Blank is still refused. No test could have caught this: every fixture
+  in 191 tests happened to be unpadded, so `.trim()` was a no-op on all of them.
+- **The single-reader scan blocked the user-facing copy the epic mandates.**
+  A bare `"resume.canon.json"` in a label, a `title` or a list matched the path
+  pattern, so the first component obeying the copy rule would have failed the
+  build with no escape but widening a three-entry exemption list. The pattern
+  now requires a separator, or a bare name beside a reaching call
+  (`join`, `readFileSync`, `import`), which still catches the segment-assembled
+  spelling a real second reader would use.
+- **`codeOnly()` could hide a reader.** It dropped whole lines beginning with a
+  comment, so `/* legacy */ const p = "data/resume.canon.json";` was stripped
+  entirely and the reader shipped green — the under-reporting direction its own
+  doc claimed was unreachable. It now strips comment *spans*.
+- **The failsafe against round 1 recurring was itself untestable.** The
+  new-top-level-directory guard lived imperatively in the verifier, where
+  deleting it failed nothing. Extracted as `unscannedSourceTrees` and driven by
+  tests, including one against the real repo listing.
+- Also: the core-declaration pin matched any quoted mention rather than the
+  declaration; `relative` from `node:path` was shadowed; a symlinked root file
+  escaped the scan; `IGNORED_TREES` named directories that do not exist and
+  omitted the report directories a config change would create.
 
 ## Design Notes
 
@@ -136,20 +202,20 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md', '_bmad-outp
 
 **The contract, declared once**
 
-- Normalisation lives inside the schema, so parsing *is* normalising and no caller can skip it.
-  [`canon-document.ts:129`](../../core/canon/canon-document.ts#L129)
+- Nothing outside scalar `basics` is rewritten — the whole normalisation rule, stated once.
+  [`canon-document.ts:155`](../../core/canon/canon-document.ts#L155)
 
-- Authored prose is checked but never trimmed — a placeholder token must survive byte-for-byte.
-  [`canon-document.ts:144`](../../core/canon/canon-document.ts#L144)
+- Normalisation lives inside the schema, so parsing *is* normalising and no caller can skip it.
+  [`canon-document.ts:180`](../../core/canon/canon-document.ts#L180)
 
 - Strict: a `staus:` typo is a parse failure naming the key, not a silently dropped field.
-  [`canon-document.ts:235`](../../core/canon/canon-document.ts#L235)
+  [`canon-document.ts:260`](../../core/canon/canon-document.ts#L260)
 
 - The path declared once, and imported by the routine that creates the file.
   [`canon-document.ts:33`](../../core/canon/canon-document.ts#L33)
 
 - `DATA_DIRECTORY` is derived from it, so the two can never name different directories.
-  [`bootstrap.ts:56`](../../adapters/db/bootstrap.ts#L56)
+  [`bootstrap.ts:67`](../../adapters/db/bootstrap.ts#L67)
 
 **Proof the rule holds — the round-1 gap**
 
@@ -157,30 +223,30 @@ context: ['_bmad-output/implementation-artifacts/epic-1-context.md', '_bmad-outp
   [`project-invariants.mjs:329`](../../scripts/project-invariants.mjs#L329)
 
 - Matches a quoted *path*, not a mention: the epic's copy rule requires prose to name the file.
-  [`project-invariants.mjs:393`](../../scripts/project-invariants.mjs#L393)
+  [`project-invariants.mjs:402`](../../scripts/project-invariants.mjs#L402)
 
 - Comment lines come out first, so a doc comment is not a violation.
-  [`project-invariants.mjs:370`](../../scripts/project-invariants.mjs#L370)
+  [`project-invariants.mjs:382`](../../scripts/project-invariants.mjs#L382)
 
 - Three exemptions, each justified, each asserted to exist.
   [`project-invariants.mjs:347`](../../scripts/project-invariants.mjs#L347)
 
 - The verifier supplies two directory reads and nothing else — no second copy of the scope.
-  [`verify-boundaries.mjs:716`](../../scripts/verify-boundaries.mjs#L716)
+  [`verify-boundaries.mjs:725`](../../scripts/verify-boundaries.mjs#L725)
 
 - Catches the next top-level directory to hold source, which is how the repo root was missed.
-  [`verify-boundaries.mjs:788`](../../scripts/verify-boundaries.mjs#L788)
+  [`verify-boundaries.mjs:813`](../../scripts/verify-boundaries.mjs#L813)
 
 - Pins the guardrail's copy of the name to the core declaration it mirrors.
-  [`verify-boundaries.mjs:808`](../../scripts/verify-boundaries.mjs#L808)
+  [`verify-boundaries.mjs:831`](../../scripts/verify-boundaries.mjs#L831)
 
 **Supporting**
 
 - Drives the collection itself: a root file must come back, which string-matching the source could not show.
-  [`project-invariants.test.mts:503`](../../tests/project-invariants.test.mts#L503)
+  [`project-invariants.test.mts:565`](../../tests/project-invariants.test.mts#L565)
 
 - The exact input that shipped green in round 1.
-  [`canon-document.test.mts:76`](../../tests/canon-document.test.mts#L76)
+  [`canon-document.test.mts:130`](../../tests/canon-document.test.mts#L130)
 
 - The one branch every production caller takes, exercised without touching the real `./data`.
-  [`canon-gateway.test.mts:294`](../../tests/canon-gateway.test.mts#L294)
+  [`canon-gateway.test.mts:297`](../../tests/canon-gateway.test.mts#L297)

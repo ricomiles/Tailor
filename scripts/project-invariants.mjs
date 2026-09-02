@@ -364,45 +364,81 @@ export const CANON_READ_EXEMPT = Object.freeze([
  * line; a false negative is the second reader shipping green, which is
  * exactly how round 1 got here.
  */
-const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*)/;
-
-/** The source with its comment-only lines removed. */
+/**
+ * Comment *spans*, not comment lines.
+ *
+ * The first version dropped any line beginning with `//`, `/*` or `*`, and the
+ * doc claimed the imprecision could only over-report. It could not: a line
+ * reading `/* legacy *``/ const p = "data/resume.canon.json";` opens with a
+ * comment, so the whole line went — real code included — and a second reader
+ * spelled that way passed the build. The under-reporting direction is the one
+ * that matters, because a missed reader is the failure this check exists for.
+ *
+ * Block spans go first so an inner line of a `/* … *``/` body cannot survive as
+ * apparent code, then line comments to end of line. A `//` inside a string
+ * truncates that line, which can only ever over-report on the remainder — the
+ * safe direction, and it costs one reworded line.
+ */
 export function codeOnly(source) {
   return String(source ?? "")
-    .split("\n")
-    .filter((line) => !COMMENT_LINE.test(line))
-    .join("\n");
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/\/\/[^\n]*/g, " ");
 }
 
 const CANON_NAME_PATTERN = CANON_FILE_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
- * A quoted *path* naming the canon file: a string, template or import
- * specifier whose entire content is a run of non-whitespace ending in the file
- * name.
+ * A quoted *path* naming the canon file — a separator, then the name.
  *
- * The narrowness is forced by the epic's own copy rule. Every user-facing
- * reference to the resume source must name `resume.canon.json`, so a pattern
- * matching any occurrence would turn the first component obeying that rule
- * into a build failure telling it to call `readCanon()`, with no escape but
- * widening an exemption list the tests pin short. A sentence carries spaces —
- * `"Could not read resume.canon.json"` — and does not match. A path does not —
- * `"data/resume.canon.json"`, `` `${root}/data/resume.canon.json` ``,
- * `import canon from "../../data/resume.canon.json"` — and does.
+ * `"data/resume.canon.json"`, `` `${root}/data/resume.canon.json` `` and
+ * `import canon from "../../data/resume.canon.json"` all match. A bare
+ * `"resume.canon.json"` does not, and that is the point: the epic requires
+ * every user-facing reference to the resume source to name the file, so the
+ * minimal form of obeying that rule — a label, a `title`, an item in a list —
+ * is not evidence of a second reader. An earlier version matched it and would
+ * have failed the build on the first component that followed the copy rule,
+ * with no escape but widening an exemption list the tests pin to three entries.
  */
 export const CANON_PATH_LITERAL = new RegExp(
-  "(['\"`])[^'\"`\\s]*" + CANON_NAME_PATTERN + "\\1",
+  "(['\"`])[^'\"`\\s]*/" + CANON_NAME_PATTERN + "\\1",
 );
+
+/** The bare file name in quotes, with no path around it. */
+export const CANON_BARE_NAME = new RegExp("(['\"`])" + CANON_NAME_PATTERN + "\\1");
+
+/**
+ * Something on this line is reaching for a file.
+ *
+ * A bare `"resume.canon.json"` is a label until it sits beside one of these, at
+ * which point it is a path being assembled — `join(root, "data",
+ * "resume.canon.json")` is the spelling a second reader following this repo's
+ * own conventions would actually use, and it carries no separator of its own.
+ */
+export const CANON_REACHING_CALL =
+  /(?<![\w$])(?:readFile|readFileSync|readFileAsync|open|openSync|createReadStream|require|import|from|join|resolve)(?![\w$])/;
 
 /**
  * The identifier `CANON_FILE`, in any position.
  *
  * Importing the core constant is the other way to reach the file, and the way
  * a second reader written by someone following this repo's own declare-once
- * rule would be spelled. Comment lines are dropped first, so prose about
+ * rule would be spelled. Comments are stripped first, so prose about
  * `CANON_FILE` is not a violation.
  */
 export const CANON_FILE_IDENTIFIER = /(?<![\w$])CANON_FILE(?![\w$])/;
+
+/**
+ * Whether one line of code reaches for canon.
+ *
+ * Line by line, because "a bare name beside a reaching call" is a statement
+ * about proximity: judged over a whole file, one component's label and another
+ * function's unrelated `join()` would convict a file that never opens anything.
+ */
+export function lineReachesCanon(line) {
+  if (CANON_FILE_IDENTIFIER.test(line)) return true;
+  if (CANON_PATH_LITERAL.test(line)) return true;
+  return CANON_BARE_NAME.test(line) && CANON_REACHING_CALL.test(line);
+}
 
 /**
  * Every app source reaching the canon file other than the ones allowed to.
@@ -417,10 +453,7 @@ export function findCanonReaders(sources, exempt = CANON_READ_EXEMPT) {
   const found = [];
   for (const { name, body } of sources ?? []) {
     if (allowed.has(name)) continue;
-    const code = codeOnly(body);
-    if (CANON_PATH_LITERAL.test(code) || CANON_FILE_IDENTIFIER.test(code)) {
-      found.push(name);
-    }
+    if (codeOnly(body).split("\n").some(lineReachesCanon)) found.push(name);
   }
   return [...new Set(found)].sort();
 }
@@ -524,4 +557,24 @@ export function projectInvariantProblems({
   }
 
   return problems;
+}
+
+/**
+ * Top-level directories that hold source and are not covered by the scan.
+ *
+ * The round-1 failure was a source tree outside the scanned set, and the guard
+ * written against it lived imperatively in the verifier where no test could
+ * drive it — the same shape, one level up. This is the pure form: hand it the
+ * directory listing and the ignore set, get back what is unaccounted for.
+ *
+ * @param {() => string[]} listRootDirs top-level directory names.
+ * @param {Iterable<string>} ignored names deliberately outside the scan.
+ * @returns {string[]} sorted; empty means every source tree is accounted for.
+ */
+export function unscannedSourceTrees(listRootDirs, ignored) {
+  const excused = new Set([...(ignored ?? []), ...CANON_SCAN_DIRS]);
+  return (listRootDirs() ?? [])
+    .filter((name) => !name.startsWith(".") && !name.startsWith("_"))
+    .filter((name) => !excused.has(name))
+    .sort();
 }
