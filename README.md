@@ -123,6 +123,50 @@ board endpoint is public JSON. `label` is optional. Epic 2 reads the file
 through `boardsFileSchema` and reports what it rejects; bootstrap never opens an
 existing one.
 
+## The canonical resume
+
+`data/resume.canon.json` holds everything true about the person applying. It is
+hand-authored, gitignored and irreplaceable, and **exactly one module in the app
+opens it**: `adapters/canon/canon-gateway.ts`, through `readCanon()`. That claim
+is enforced, not asserted — `verify:boundaries` scans every app source, the repo
+root included, and fails the build naming any second reader. Three files are
+exempt and each is pinned by a test: the gateway, `adapters/db/bootstrap.ts`
+(which creates the file without ever parsing it), and `core/canon/canon-document.ts`
+(which declares the path). The build-chain scripts under `scripts/` spell the
+path too, and are outside the scan deliberately: `run-tests.mjs` and
+`startup-gate.mjs` watch that exact file to prove the suite never touched it and
+that a real boot creates it. Banning the name there would delete those checks.
+(They re-spell it rather than import it for a separate reason — a `.mjs` script
+cannot import a `.ts` module.)
+
+The shape lives in `core/canon/canon-document.ts` as strict Zod schemas: an
+unknown or misspelled key is a parse failure naming it, never dropped in
+silence. That matters more here than anywhere else in the app — a `staus:` typo
+on a bullet would otherwise disarm the render-readiness gate with no error at
+all.
+
+`readCanon(root = process.cwd())` returns the parsed document, or throws
+`TailorError` with code `internal` carrying the original as `cause` — for a
+missing file, a file that is not JSON, or a document that does not match the
+shape, which names the failing field paths. The thrown message is user-facing:
+`app/api/to-error-response.ts` puts it straight into a response body, so it
+names `resume.canon.json` and never the machine's directory layout. The `root`
+parameter exists so tests can point at a temp directory; production never
+passes it.
+
+**Reads re-parse.** Every `readCanon()` call re-opens the file. There is no
+cache and no invalidation hook, because canon is edited by hand while the server
+runs. **Reads only:** the single write path — substituting a number into an
+existing `needs-number` field — arrives in Epic 4.
+
+**Normalisation is asymmetric, and it happens inside the parse**, so no caller
+can skip it. For the eight scalar `basics` fields (`name`, `label`, `email`,
+`phone`, and the four under `location`) the unfilled-field sentinel `TODO` comes
+back as absent, and surrounding whitespace is trimmed. Everywhere else the value
+is returned byte-identical: a placeholder token inside a bullet's `text`, the
+`TODO` in a LinkedIn `username`, and `rendering.template` all survive verbatim,
+because later epics have to show them unchanged.
+
 ### Schema changes
 
 Edit `adapters/db/schema.ts`, run `pnpm db:generate`, commit the generated
@@ -144,8 +188,8 @@ arrive with the story that first needs one.
 ## Layout
 
 ```text
-core/         # ports · canon · pipeline · validation · diff · scoring · gates · errors · boards · bootstrap
-adapters/     # boards · ats · model · render · db (bootstrap, schema, migrations, canon seed)
+core/         # canon (the resume contract) · ports · pipeline · validation · diff · scoring · gates · errors · boards · bootstrap
+adapters/     # canon (the one reader) · boards · ats · model · render · db (bootstrap, schema, migrations, canon seed)
 app/          # App Router; api/ is the composition root
 components/   # resume-document · top-bar
 tests/        # Node unit suite (*.test.mts) — outside core/, which bans node:test

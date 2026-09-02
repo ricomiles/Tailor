@@ -54,7 +54,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RESOLVE_EXTENSIONS } from "../eslint.config.mjs";
 import { MARKER, observedHash, recordedHash } from "./e2e-gate.mjs";
@@ -62,6 +62,11 @@ import {
   JOURNAL_FILE,
   MIGRATIONS_DIR,
   PUSH_SCAN_EXEMPT,
+  CANON_FILE_NAME,
+  CANON_READ_EXEMPT,
+  CANON_SCAN_DIRS,
+  PROBE_PREFIX,
+  canonScanPaths,
   projectInvariantProblems,
 } from "./project-invariants.mjs";
 
@@ -183,7 +188,6 @@ const fail = (message) => failures.push(message);
 // ---------------------------------------------------------------------------
 
 const PROBE_DIR = join(ROOT, "core", "canon");
-const PROBE_PREFIX = "__boundary-probe.";
 
 /**
  * One probe per enforcement mechanism. A single alias-form probe only ever
@@ -708,6 +712,113 @@ try {
   // Reported by the composed check, which says why it matters.
 }
 
+// ---------------------------------------------------------------------------
+// Exactly one module opens the canonical resume.
+//
+// Which paths are in scope is decided by `canonScanPaths` in
+// `./project-invariants.mjs`, not here. That is the whole point of it being
+// there: the round-1 failure was never in the predicate — the predicate was
+// correct and nothing ever handed it `instrumentation.ts` — so the *scope* is
+// what a test has to be able to drive, and it can only drive a pure function.
+// This file supplies two directory reads and nothing else.
+const canonPaths = canonScanPaths(
+  (dir) => {
+    try {
+      return readdirSync(join(ROOT, dir), { recursive: true, withFileTypes: false }).map(
+        (entry) => `${dir}/${String(entry).split(sep).join("/")}`,
+      );
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        fail(`${dir}/ could not be walked for canon reads (${error.message}).`);
+      }
+      return [];
+    }
+  },
+  () => {
+    try {
+      return readdirSync(ROOT, { withFileTypes: true })
+        .filter((entry) => entry.isFile())
+        .map((entry) => entry.name);
+    } catch (error) {
+      fail(`The repo root could not be listed for canon reads (${error.message}).`);
+      return [];
+    }
+  },
+);
+
+const canonSources = [];
+for (const name of canonPaths) {
+  try {
+    canonSources.push({ name, body: readFileSync(join(ROOT, name), "utf8") });
+  } catch (error) {
+    // A directory whose name looks like a module, or a file deleted between the
+    // walk and the read. Neither is a canon reader.
+    if (error.code === "ENOENT" || error.code === "EISDIR") continue;
+    fail(`${name} could not be scanned for a canon read (${error.message}).`);
+  }
+}
+
+// A scan that gathered nothing is not a clean repo, it is a disarmed check.
+//
+// Counting `canonSources` alone could never catch that: the repo root is walked
+// unconditionally, so the total stays non-zero however far the tree list
+// shrinks. What actually has to hold is that the declared list still covers
+// every source tree on disk — which is also what catches the *next* top-level
+// directory to hold source, the way `CANON_SCAN_DIRS` failed to catch the repo
+// root in round 1.
+// Each exclusion is a decision, not an oversight:
+//  - `scripts` and `tests` legitimately spell the path — `run-tests.mjs` and
+//    `startup-gate.mjs` watch the real file, and the suites build fixtures.
+//    Banning the name there would delete those checks.
+//  - `node_modules`, `data`, `out`, `test-results` are generated or runtime
+//    state, none of it this repo's source.
+const IGNORED_TREES = new Set([
+  "scripts",
+  "tests",
+  "node_modules",
+  "data",
+  "out",
+  "public",
+  "test-results",
+]);
+for (const entry of readdirSync(ROOT, { withFileTypes: true })) {
+  if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name.startsWith("_")) continue;
+  if (IGNORED_TREES.has(entry.name) || CANON_SCAN_DIRS.includes(entry.name)) continue;
+  fail(
+    `${entry.name}/ holds source but is not in CANON_SCAN_DIRS, so the ` +
+      "single-reader rule does not reach it. Add it there, or add it to the " +
+      "ignore list here with a reason.",
+  );
+}
+
+if (canonSources.length === 0) {
+  fail(
+    "The canon-reader scan gathered no app sources at all. Until this is " +
+      "fixed, the single-reader invariant is not being enforced.",
+  );
+}
+
+// The guardrail's copy of the file name, pinned to the core declaration it
+// mirrors. `project-invariants.mjs` is dependency-free by design and cannot
+// import a `.ts` module, so the two spellings are held together here — and this
+// is the check its doc comment promises.
+const canonDeclaration = readFileSync(join(ROOT, "core/canon/canon-document.ts"), "utf8");
+if (!canonDeclaration.includes(`/${CANON_FILE_NAME}"`)) {
+  fail(
+    `core/canon/canon-document.ts no longer declares a path ending in ` +
+      `${CANON_FILE_NAME}, which is the name scripts/project-invariants.mjs ` +
+      "scans for. The single-reader check would stop matching anything.",
+  );
+}
+
+// Every exemption must name a file that exists: a stale entry left behind by a
+// rename holds a slot open for whatever lands at that path next.
+for (const relative of CANON_READ_EXEMPT) {
+  if (!existsSync(join(ROOT, relative))) {
+    fail(`${relative} is exempt from the canon-reader scan but does not exist.`);
+  }
+}
+
 // This call is the wiring. Everything it decides is covered by unit tests
 // firing violating inputs at the same function; what a test cannot see is
 // whether the *real* inputs are handed over, so `tests/project-invariants.test.mts`
@@ -715,6 +826,7 @@ try {
 for (const problem of projectInvariantProblems({
   scripts: pkg.scripts,
   sources: pushSources,
+  canonSources,
   journalText,
   exists: (relative) => existsSync(join(ROOT, relative)),
   listSqlTags: () =>
@@ -852,6 +964,8 @@ console.log(
 // which is the failure mode this whole file is written against.
 console.log(
   `Project invariants intact: no drizzle-kit push in package.json or any of ` +
-    `${PUSH_SCANNED_SOURCES.length} scanned sources, and ${JOURNAL_FILE} agrees ` +
-    "with the directory the app reads and drizzle-kit writes.",
+    `${PUSH_SCANNED_SOURCES.length} scanned sources, ${JOURNAL_FILE} agrees ` +
+    "with the directory the app reads and drizzle-kit writes, and " +
+    `${canonSources.length} app sources — the repo root included — hold no ` +
+    `second reader of ${CANON_FILE_NAME} beyond the ${CANON_READ_EXEMPT.length} exempt.`,
 );

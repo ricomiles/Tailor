@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 // directly by the Node test runner, which resolves neither tsconfig paths nor
 // extensionless specifiers.
 import { EMPTY_BOARDS_FILE } from "../../core/boards/boards-file.ts";
+import { CANON_FILE } from "../../core/canon/canon-document.ts";
 import {
   ARTIFACT_OUTCOMES,
   bootstrapReportSchema,
@@ -49,9 +50,21 @@ import { TailorError } from "../../core/errors/tailor-error.ts";
  * it.
  */
 
-/** Where each artifact lives, relative to the root handed in. */
-const DATA_DIRECTORY = "data";
-const CANON_FILE = join(DATA_DIRECTORY, "resume.canon.json");
+/**
+ * Where each artifact lives, relative to the root handed in.
+ *
+ * `CANON_FILE` is imported from `core/canon/canon-document.ts` rather than
+ * declared here: Story 1.6's gateway reads that same path, and two literals
+ * naming one file is the drift this repo has already paid for once with the
+ * migrations directory (see `MIGRATIONS_FOLDER` below). Bootstrap seeding one
+ * path while the gateway read another would leave every check green.
+ *
+ * `DATA_DIRECTORY` is *derived* from it rather than declared beside it, so the
+ * directory this routine creates is by construction the directory canon lands
+ * in. Declared independently, moving `CANON_FILE` would have `mkdirSync`
+ * create one directory and `linkSync` write into another that does not exist.
+ */
+const DATA_DIRECTORY = dirname(CANON_FILE);
 const DATABASE_FILE = join(DATA_DIRECTORY, "tailor.db");
 const BOARDS_FILE = "boards.json";
 

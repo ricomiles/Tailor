@@ -57,6 +57,12 @@ const OBSERVED = [
   "adapters/db/migrations/meta/_journal.json",
   "core/boards/boards-file.ts",
   "core/bootstrap/bootstrap-report.ts",
+  // `CANON_FILE` lives here and decides where bootstrap seeds canon — the exact
+  // path `scripts/startup-gate.mjs` asserts a real boot creates. Moving it
+  // without re-booting the app would leave the marker valid and the build green.
+  // `adapters/canon/canon-gateway.ts` is deliberately absent: nothing on the
+  // startup path reads canon, so a gateway change cannot alter what a boot writes.
+  "core/canon/canon-document.ts",
 ];
 
 export function observedHash() {

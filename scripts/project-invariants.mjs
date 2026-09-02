@@ -254,6 +254,177 @@ export function strayTestFiles(candidates, collected, anyTestFile) {
     .sort();
 }
 
+// ---------------------------------------------------------------------------
+// Exactly one module opens the canonical resume.
+// ---------------------------------------------------------------------------
+
+/**
+ * The canonical resume's file name, as the scan below recognises it.
+ *
+ * Spelled here rather than imported from `core/canon/canon-document.ts`,
+ * because this module is deliberately dependency-free and pure — that is what
+ * lets `tests/project-invariants.test.mts` import a predicate without running
+ * a guardrail. The two spellings are pinned to each other in
+ * `scripts/verify-boundaries.mjs`, which imports the core constant and fails
+ * the build if it stops ending in this name.
+ */
+export const CANON_FILE_NAME = "resume.canon.json";
+
+/**
+ * The trees the single-reader rule covers: every directory holding app source,
+ * **plus the repo root**.
+ *
+ * The root is not optional, and leaving it out is not a theoretical gap:
+ * `instrumentation.ts` runs at server start, already imports the bootstrap
+ * adapter, and is the likeliest home in the repo for a "load canon once at
+ * boot" second reader — and it sits in no subtree. `next.config.ts` and
+ * `drizzle.config.ts` are in the same position. The `drizzle-kit push` ban
+ * made the mirror-image mistake in the other direction, and
+ * `scripts/verify-boundaries.mjs:670-674` records it.
+ *
+ * `scripts/` and `tests/` are deliberately outside it. The build-chain scripts
+ * name the path in order to *watch* it — `run-tests.mjs` fails a suite that
+ * touched the real `./data`, `startup-gate.mjs` compares a booted canon
+ * against the seed — so banning the spelling there would delete the checks
+ * protecting the file. The frozen "declared exactly once" constraint scopes to
+ * app source; those script-side spellings are recorded in `deferred-work.md`.
+ */
+export const CANON_SCAN_DIRS = Object.freeze([
+  "adapters",
+  "app",
+  "components",
+  "core",
+  "e2e",
+  "tools",
+]);
+
+/** Every extension a module that could open the file is written in. */
+export const CANON_SCANNABLE = /\.(?:m|c)?[jt]sx?$/;
+
+/**
+ * `scripts/verify-boundaries.mjs` writes deliberately-violating probes into
+ * `core/canon/` and deletes them on exit. Without this, a concurrent
+ * `pnpm verify:boundaries` would put another process's probe into this scan,
+ * and an unrelated suite's verdict would depend on the timing of one.
+ */
+export const PROBE_PREFIX = "__boundary-probe.";
+
+const baseName = (relativePath) => String(relativePath).split("/").pop() ?? "";
+
+/**
+ * Which files the single-reader scan looks at, given the tree.
+ *
+ * Pure, with the two directory reads injected, for the reason every predicate
+ * in this module is — and for one more. The round-1 failure was never in the
+ * predicate: the predicate was correct and nothing ever handed it
+ * `instrumentation.ts`. A test can now assert the scan's *scope* by handing
+ * this a root file and checking it comes back, which is the half a predicate
+ * test cannot see.
+ *
+ * @param {(dir: string) => string[]} listTree repo-relative paths under `dir`,
+ * recursively.
+ * @param {() => string[]} listRoot file names sitting directly at the repo root.
+ * @returns {string[]} sorted, deduplicated, repo-relative.
+ */
+export function canonScanPaths(listTree, listRoot) {
+  const paths = [];
+  for (const dir of CANON_SCAN_DIRS) paths.push(...(listTree(dir) ?? []));
+  paths.push(...(listRoot() ?? []));
+  return [...new Set(paths)]
+    .filter((relativePath) => CANON_SCANNABLE.test(relativePath))
+    .filter((relativePath) => !baseName(relativePath).startsWith(PROBE_PREFIX))
+    .sort();
+}
+
+/**
+ * The three files allowed to reach the canon file, because reaching it is
+ * their job: the module that declares the path, the one gateway that reads it,
+ * and the bootstrap that seeds it onto a clean machine.
+ *
+ * Exported so a test can assert it stays this short. An exemption list is the
+ * obvious place to hide a second reader.
+ */
+export const CANON_READ_EXEMPT = Object.freeze([
+  "adapters/canon/canon-gateway.ts",
+  "adapters/db/bootstrap.ts",
+  "core/canon/canon-document.ts",
+]);
+
+/**
+ * A line that is nothing but a comment.
+ *
+ * Comments have to come out before the patterns below are applied: doc
+ * comments in this repo spell paths in backticks, and a scan that read them
+ * would report every file that merely *mentions* canon. Whole comment lines
+ * are dropped rather than lexing the file, and the direction of the
+ * imprecision is deliberate. Dropping only lines that are *entirely* comment
+ * can leave a trailing `// data/resume.canon.json` behind and over-report;
+ * a lexer that mistook an apostrophe in JSX prose for a string quote could
+ * swallow real code and under-report. A false positive costs one reworded
+ * line; a false negative is the second reader shipping green, which is
+ * exactly how round 1 got here.
+ */
+const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*)/;
+
+/** The source with its comment-only lines removed. */
+export function codeOnly(source) {
+  return String(source ?? "")
+    .split("\n")
+    .filter((line) => !COMMENT_LINE.test(line))
+    .join("\n");
+}
+
+const CANON_NAME_PATTERN = CANON_FILE_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * A quoted *path* naming the canon file: a string, template or import
+ * specifier whose entire content is a run of non-whitespace ending in the file
+ * name.
+ *
+ * The narrowness is forced by the epic's own copy rule. Every user-facing
+ * reference to the resume source must name `resume.canon.json`, so a pattern
+ * matching any occurrence would turn the first component obeying that rule
+ * into a build failure telling it to call `readCanon()`, with no escape but
+ * widening an exemption list the tests pin short. A sentence carries spaces —
+ * `"Could not read resume.canon.json"` — and does not match. A path does not —
+ * `"data/resume.canon.json"`, `` `${root}/data/resume.canon.json` ``,
+ * `import canon from "../../data/resume.canon.json"` — and does.
+ */
+export const CANON_PATH_LITERAL = new RegExp(
+  "(['\"`])[^'\"`\\s]*" + CANON_NAME_PATTERN + "\\1",
+);
+
+/**
+ * The identifier `CANON_FILE`, in any position.
+ *
+ * Importing the core constant is the other way to reach the file, and the way
+ * a second reader written by someone following this repo's own declare-once
+ * rule would be spelled. Comment lines are dropped first, so prose about
+ * `CANON_FILE` is not a violation.
+ */
+export const CANON_FILE_IDENTIFIER = /(?<![\w$])CANON_FILE(?![\w$])/;
+
+/**
+ * Every app source reaching the canon file other than the ones allowed to.
+ *
+ * @param {Iterable<{ name: string, body: string }>} sources
+ * @param {Iterable<string>} exempt
+ * @returns {string[]} sorted, deduplicated — build output must not depend on
+ * the order a directory happened to be read in.
+ */
+export function findCanonReaders(sources, exempt = CANON_READ_EXEMPT) {
+  const allowed = new Set(exempt ?? []);
+  const found = [];
+  for (const { name, body } of sources ?? []) {
+    if (allowed.has(name)) continue;
+    const code = codeOnly(body);
+    if (CANON_PATH_LITERAL.test(code) || CANON_FILE_IDENTIFIER.test(code)) {
+      found.push(name);
+    }
+  }
+  return [...new Set(found)].sort();
+}
+
 /**
  * Every project invariant, composed: inputs in, the sentences the build should
  * print out.
@@ -270,6 +441,7 @@ export function strayTestFiles(candidates, collected, anyTestFile) {
  * @param {{
  *   scripts?: Record<string, string> | null,
  *   sources?: Iterable<{ name: string, body: string }>,
+ *   canonSources?: Iterable<{ name: string, body: string }>,
  *   journalText?: string | null,
  *   exists?: (relativePath: string) => boolean,
  *   listSqlTags?: () => string[],
@@ -279,6 +451,7 @@ export function strayTestFiles(candidates, collected, anyTestFile) {
 export function projectInvariantProblems({
   scripts,
   sources = [],
+  canonSources = [],
   journalText = null,
   exists = () => true,
   listSqlTags = () => [],
@@ -295,6 +468,18 @@ export function projectInvariantProblems({
         "live database by dropping whatever stands in the way — a column of real " +
         "posting and run history, in a gitignored file with no backup. Generate a " +
         "migration with `pnpm db:generate` instead; the startup bootstrap applies it.",
+    );
+  }
+
+  // Before the journal, deliberately. Every check below this point is skipped
+  // when the journal cannot be read, and a canon invariant that stops running
+  // whenever an unrelated file breaks is a canon invariant nobody can rely on.
+  for (const name of findCanonReaders(canonSources)) {
+    problems.push(
+      `${name} reaches for ${CANON_FILE_NAME}. Exactly one module opens the ` +
+        "canonical resume — `adapters/canon/canon-gateway.ts` — because a second " +
+        "reader is a second idea of the shape and a second chance to normalise " +
+        "the unfilled-field sentinel differently. Call `readCanon()` instead.",
     );
   }
 

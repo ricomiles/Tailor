@@ -266,3 +266,29 @@ Three review layers over the story-1.4 diff. Everything mechanically fixable was
 - **`eslint.config.mjs` has no element type for repo-root source.** `eslint.config.mjs:719` — `instrumentation.ts` and `drizzle.config.ts` are the repo's first root-level modules and match none of the four `boundaries/elements` patterns, the blind spot the config's own comment warns about. No live consequence today: `boundaries/element-types` is `default: "allow"` and constrains only `from: ["core"]`, so nothing about core's protection is weakened. Worth an entry when root-level source grows.
 - **`epic-1-context.md`'s `core/` list was not amended for `core/bootstrap/`.** `_bmad-output/implementation-artifacts/epic-1-context.md:37` — extends the existing `core/errors/` item above; the list is now three subdirectories behind (`boards`, `bootstrap`, `errors`). Fold into the epic-1 retrospective rather than patching one story's spec.
 - **`adapters.md`'s `fetchJobs(boardUrl)` contradicts the boards shape Story 1.5 declared.** `_bmad-output/specs/spec-tailor/adapters.md:10` fixes AD-2's port signature as `fetchJobs(boardUrl)`; `core/boards/boards-file.ts` declares a board as `{ type, token }`, and Story 1.5's Design Notes record why the token wins (it is the only part a human types, it is reused as `postings.source` and as the adapter registry key, and a stored URL admits four spellings of one board that no longer compare equal). The consequence is that `BoardPort` takes the entry rather than a URL and each adapter builds its own. Deferred because `adapters.md` is a spec companion, not this story's file; Epic 2's first board story is where the signature actually lands, and it should amend the companion in the same change.
+
+## Deferred from: code review of spec-1-6-read-the-canonical-resume-through-a-single-gateway.md (2026-09-02)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md`
+  summary: Four `scripts/` files spell `data/resume.canon.json` independently of the core declaration.
+  evidence: `scripts/startup-gate.mjs` (several sites), `scripts/run-tests.mjs:131` and `scripts/verify.mjs:33` each hold the literal. Story 1.6 makes `CANON_FILE` the single declaration for *app source*, but the build-chain scripts cannot import a `.ts` module without the type stripper, so changing the path would desynchronise the startup gate from the app. Pre-existing — every one of those literals predates this story.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md`
+  summary: `e2e-gate.mjs`'s `OBSERVED` entries are never checked to name a file that exists.
+  evidence: `observedHash()` catches a failed read and hashes the string `"<absent>"`, so an entry naming a moved or renamed file produces a stable hash and no signal — the entry silently stops observing anything. Nothing in `tests/` imports `OBSERVED` or `observedHash`. Pre-existing, and it widens with every entry added.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md`
+  summary: The canon schema validates no date shape, email or URL, against an epic constraint requiring ISO 8601 at every boundary.
+  evidence: `epic-1-context.md` fixes "ISO 8601 strings at every boundary and in storage" and "every validation check returns a structured result naming the offending token". `startDate` / `endDate` are plain strings, so `"March 2026"` and `"2026-13"` reach the renderer; `basics.email` and `profiles[].url` are unvalidated. Deferred rather than folded into 1.6 because the renderer that would surface a malformed date arrives in Story 1.7, and a date contract is worth setting where it is consumed.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md`
+  summary: No uniqueness check on `id` across bullets, roles, skills and summaries.
+  evidence: Canon carries stable ids (`ard-1`, `saib-lead-3`, `sum-web3`) that Epic 3's model output cites and Epic 4's diff set resolves against. A duplicate id parses clean today and would silently resolve a citation to the wrong claim. Deferred to the story that first resolves an id, where the failure is observable.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md`
+  summary: The asymmetric-normalisation doctrine is restated in five places with nothing keeping them in sync.
+  evidence: The same rule appears in `README.md`, `epic-1-context.md`, the spec's Design Notes, and both new module headers. In a repo whose stated doctrine is that a shape declared twice drifts, prose describing that shape is declared five times — and the README already diverged from the code on trimming during round 1.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-read-the-canonical-resume-through-a-single-gateway.md`
+  summary: The single-reader scan cannot cover `tests/`, which the spec's frozen Never clause names.
+  evidence: The frozen constraint bans "a test helper that reads it directly rather than through the gateway", but `tests/` is excluded from `CANON_SCAN_DIRS` by necessity — `tests/canon-gateway.test.mts` writes canon-shaped fixtures by path, and `tests/bootstrap.test.mts` asserts the seeded copy byte-for-byte, so banning the spelling there would delete both suites. Today no test parses canon with anything but `readCanon()`; nothing mechanically holds that. Closing it properly needs a narrower rule — flagging a *parse* of the file rather than a mention of its name — which is a scan the current text-matching design cannot express.

@@ -13,6 +13,13 @@ import {
   findPushInvocations,
   findPushScripts,
   journalProblems,
+  CANON_FILE_NAME,
+  CANON_READ_EXEMPT,
+  CANON_SCAN_DIRS,
+  PROBE_PREFIX,
+  canonScanPaths,
+  codeOnly,
+  findCanonReaders,
   missingMigrationFiles,
   orphanMigrationFiles,
   projectInvariantProblems,
@@ -343,6 +350,7 @@ test("the verifier still hands the composed check the real inputs", () => {
   assert.ok(source.includes("projectInvariantProblems({"));
   assert.ok(source.includes("scripts: pkg.scripts"));
   assert.ok(source.includes("sources: pushSources"));
+  assert.ok(source.includes("canonSources,"));
   assert.ok(source.includes("journalText,"));
 });
 
@@ -389,4 +397,159 @@ test("the files the runner will run are not reported against it", () => {
     strayTestFiles(["tests/a.test.mts", "tests/b.test.mts"], ["tests/a.test.mts", "tests/b.test.mts"], ANY_TEST_FILE),
     [],
   );
+});
+
+// ---------------------------------------------------------------------------
+// Exactly one module opens the canonical resume.
+// ---------------------------------------------------------------------------
+
+const READER = `readFileSync(join(root, "data/${CANON_FILE_NAME}"), "utf8")`;
+
+test("a module reaching for the canon path is reported", () => {
+  assert.deepEqual(
+    findCanonReaders([
+      { name: "app/page.tsx", body: READER },
+      { name: "core/pipeline/pipeline-counts.ts", body: "export const x = 1;" },
+    ]),
+    ["app/page.tsx"],
+  );
+});
+
+test("a module importing the core constant is reported too", () => {
+  // The other way to reach the file, and the way someone following this repo's
+  // own declare-once rule would spell a second reader.
+  assert.deepEqual(
+    findCanonReaders([
+      { name: "app/api/canon/route.ts", body: 'import { CANON_FILE } from "@/core/canon/canon-document";' },
+    ]),
+    ["app/api/canon/route.ts"],
+  );
+});
+
+test("the three exempt files are not reported against themselves", () => {
+  assert.deepEqual(
+    findCanonReaders(CANON_READ_EXEMPT.map((name) => ({ name, body: READER }))),
+    [],
+  );
+});
+
+test("the exemption list stays short enough to read", () => {
+  // An exemption list is the obvious place to hide a second reader. These three
+  // are the gateway, the module that creates the file without parsing it, and
+  // the module that declares the path.
+  assert.deepEqual(
+    [...CANON_READ_EXEMPT],
+    ["adapters/canon/canon-gateway.ts", "adapters/db/bootstrap.ts", "core/canon/canon-document.ts"],
+  );
+});
+
+test("offenders come back sorted, so build output does not depend on directory order", () => {
+  assert.deepEqual(
+    findCanonReaders([
+      { name: "components/z.tsx", body: READER },
+      { name: "app/a.ts", body: READER },
+    ]),
+    ["app/a.ts", "components/z.tsx"],
+  );
+});
+
+test("prose naming the file is not a violation — the epic's copy rule requires it", () => {
+  // `epic-1-context.md` fixes that every user-facing reference to the resume
+  // source names `resume.canon.json`. A scan matching any occurrence would turn
+  // the first component obeying that rule into a build failure telling it to
+  // call `readCanon()`, with no escape but widening the exemption list above.
+  assert.deepEqual(
+    findCanonReaders([
+      { name: "components/empty-state.tsx", body: `export const copy = "No resume yet. Add ${CANON_FILE_NAME} and restart.";` },
+      { name: "core/canon/notes.ts", body: `// the gateway opens data/${CANON_FILE_NAME}` },
+    ]),
+    [],
+  );
+});
+
+test("comment-only lines are stripped before the scan looks at the source", () => {
+  assert.equal(codeOnly(`// data/${CANON_FILE_NAME}\nconst x = 1;`).includes(CANON_FILE_NAME), false);
+  assert.equal(codeOnly("const x = 1;"), "const x = 1;");
+});
+
+test("the canon check runs even when the journal cannot be read", () => {
+  // Placement, asserted rather than assumed. Every check below the journal's
+  // early return is skipped when it is unreadable; a canon invariant that
+  // stopped running whenever an unrelated file broke would be one nobody could
+  // rely on. Two problems here means both fired.
+  const problems = projectInvariantProblems({
+    ...CLEAN_INPUTS,
+    journalText: null,
+    canonSources: [{ name: "app/page.tsx", body: READER }],
+  });
+  assert.equal(problems.length, 2, problems.join("\n"));
+  assert.ok(problems.some((problem: string) => problem.includes("app/page.tsx")));
+});
+
+test("a clean project with app sources still reports nothing", () => {
+  assert.deepEqual(
+    projectInvariantProblems({
+      ...CLEAN_INPUTS,
+      canonSources: [{ name: "app/page.tsx", body: "export default function Page() { return null; }" }],
+    }),
+    [],
+  );
+});
+
+// ---------------------------------------------------------------------------
+// The scan's scope, not just its predicate.
+// ---------------------------------------------------------------------------
+
+test("the scan collects the repo root, not only the app subtrees", () => {
+  // Round 1 shipped a scan covering `core/`, `adapters/`, `app/` and
+  // `components/` only. The predicate was correct the whole time; nothing ever
+  // handed it `instrumentation.ts` — the server-start hook that already imports
+  // the bootstrap adapter and is the likeliest home in the repo for a "load
+  // canon once at boot" second reader. A read added there passed lint, this
+  // suite, and the whole build.
+  //
+  // This drives the collection itself rather than reading the verifier's source
+  // for a phrase, because the scope is the half a predicate test cannot see.
+  const collected = canonScanPaths(
+    (dir) => (dir === "components" ? ["components/resume-document/view.tsx"] : []),
+    () => ["instrumentation.ts", "next.config.ts", "README.md"],
+  );
+
+  assert.deepEqual(collected, [
+    "components/resume-document/view.tsx",
+    "instrumentation.ts",
+    "next.config.ts",
+  ]);
+});
+
+test("every app tree is walked, and each contributes to the scan", () => {
+  const collected = canonScanPaths((dir) => [`${dir}/probe.ts`], () => []);
+  assert.deepEqual(collected, [...CANON_SCAN_DIRS].map((dir) => `${dir}/probe.ts`).sort());
+  assert.ok(CANON_SCAN_DIRS.includes("components"), "half of components/ is .tsx");
+  assert.ok(CANON_SCAN_DIRS.includes("e2e") && CANON_SCAN_DIRS.includes("tools"));
+});
+
+test("a .tsx file is in scope — dropping the x would hide a component reader", () => {
+  assert.deepEqual(
+    canonScanPaths(() => ["components/a.tsx", "components/b.mts", "components/c.css"], () => []),
+    ["components/a.tsx", "components/b.mts"],
+  );
+});
+
+test("a boundary probe is skipped, so a concurrent guardrail run cannot change the verdict", () => {
+  assert.deepEqual(
+    canonScanPaths(() => [`core/canon/${PROBE_PREFIX}123.0.ts`, "core/canon/real.ts"], () => []),
+    ["core/canon/real.ts"],
+  );
+});
+
+test("a missing tree contributes nothing rather than throwing", () => {
+  assert.deepEqual(canonScanPaths(() => [], () => []), []);
+});
+
+test("an empty gather is a failure, not a pass", () => {
+  // A renamed directory or a narrowed extension pattern must not shrink the
+  // scanned set to nothing while the success sentence still reads green.
+  const source = readFileSync(join(REPO_ROOT, "scripts/verify-boundaries.mjs"), "utf8");
+  assert.ok(source.includes("canonSources.length === 0"));
 });

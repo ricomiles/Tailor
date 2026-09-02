@@ -41,7 +41,7 @@ development_status:
   1-3-see-the-app-s-global-chrome: done
   1-4-get-one-legible-error-shape-from-every-endpoint: done
   1-5-start-the-app-on-a-clean-machine-and-have-it-set-itself-up: done
-  1-6-read-the-canonical-resume-through-a-single-gateway: backlog
+  1-6-read-the-canonical-resume-through-a-single-gateway: review
   1-7-see-the-canonical-resume-rendered-as-a-document: backlog
   1-8-have-a-render-blocked-when-a-claim-is-incomplete: backlog
   1-9-export-the-resume-as-a-pdf-with-a-verified-text-layer: backlog

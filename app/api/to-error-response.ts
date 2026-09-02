@@ -23,7 +23,9 @@ import { pipelineStageSchema } from "../../core/pipeline/pipeline-stages.ts";
  * `tailor/no-http-status-in-core` make that mechanical rather than aspirational.
  *
  * Not a `route.ts`: this file is a plain module, and Next treats only
- * `route.*` as a route. Story 1.6 ships the first endpoint and calls this.
+ * `route.*` as a route. No endpoint calls it yet — Story 1.6 deliberately
+ * ships none, its canon gateway being a function the later stories call
+ * directly — so the first caller is whichever story first serves a request.
  */
 
 /** The only numbers that are HTTP statuses. */
